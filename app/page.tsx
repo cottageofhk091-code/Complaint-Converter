@@ -482,7 +482,7 @@ export default function Home() {
             </ul>
           </div>
 
-          <p className="pb-8 text-center text-xs text-slate-600">
+          <p className="pb-4 text-center text-xs text-slate-600">
             ※ 本ツールの出力は参考案です。法的判断・最終文面は専門家・社内規程に従ってください。
           </p>
         </section>
