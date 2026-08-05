@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  getStripePaymentLink,
+  hasUnlockQueryParam,
+  isProUnlockedInStorage,
+  LAST_RESULT_STORAGE_KEY,
+  setProUnlockedInStorage,
+} from "@/lib/pro";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type FaultLevel =
@@ -186,6 +193,69 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
+  const [isProUnlocked, setIsProUnlocked] = useState(false);
+  const [showUnlockToast, setShowUnlockToast] = useState(false);
+  const unlockToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 決済戻り / デモ用クエリ / LocalStorage からロック解除状態を復元
+  useEffect(() => {
+    const fromQuery = hasUnlockQueryParam(window.location.search);
+    const fromStorage = isProUnlockedInStorage();
+
+    if (fromQuery) {
+      setProUnlockedInStorage(true);
+      setIsProUnlocked(true);
+      setShowUnlockToast(true);
+      unlockToastTimer.current = setTimeout(() => setShowUnlockToast(false), 4000);
+      // クエリを消してリロード時の再トーストを防ぐ
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (fromStorage) {
+      setIsProUnlocked(true);
+    }
+
+    try {
+      const saved = sessionStorage.getItem(LAST_RESULT_STORAGE_KEY);
+      if (saved) {
+        setResult(JSON.parse(saved) as GenerateResult);
+      }
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      if (unlockToastTimer.current) clearTimeout(unlockToastTimer.current);
+    };
+  }, []);
+
+  // 生成結果を決済リダイレクト前後で保持
+  useEffect(() => {
+    if (!result) return;
+    try {
+      sessionStorage.setItem(LAST_RESULT_STORAGE_KEY, JSON.stringify(result));
+    } catch {
+      // ignore
+    }
+  }, [result]);
+
+  function handleUnlockClick() {
+    if (result) {
+      try {
+        sessionStorage.setItem(LAST_RESULT_STORAGE_KEY, JSON.stringify(result));
+      } catch {
+        // ignore
+      }
+    }
+
+    const paymentLink = getStripePaymentLink();
+    if (paymentLink) {
+      // Stripe Dashboard 側の成功URLを `/?unlocked=true` に設定してください
+      window.location.href = paymentLink;
+      return;
+    }
+
+    // Payment Link 未設定時の動作確認用（ローカルデモ）
+    window.location.href = "/?payment=success";
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -214,10 +284,31 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
+      {showUnlockToast && (
+        <div
+          role="status"
+          className="fixed top-4 right-4 left-4 z-50 mx-auto max-w-sm animate-fade-up rounded-xl border border-emerald-500/40 bg-slate-900/95 px-4 py-3 text-center shadow-lg shadow-black/40 backdrop-blur sm:left-auto"
+        >
+          <p className="text-sm font-medium text-emerald-300">
+            PRO版のロックを解除しました
+          </p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            全文表示・コピーが利用できます
+          </p>
+        </div>
+      )}
+
       <header className="mb-10 text-center animate-fade-up">
-        <p className="mb-3 text-xs font-medium tracking-[0.2em] text-blue-400/80 uppercase">
-          Crisis Mail Assistant
-        </p>
+        <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
+          <p className="text-xs font-medium tracking-[0.2em] text-blue-400/80 uppercase">
+            Crisis Mail Assistant
+          </p>
+          {isProUnlocked && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300">
+              PRO版利用中（ロック解除済み）
+            </span>
+          )}
+        </div>
         <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-50 sm:text-3xl">
           クレーム・お詫びメール
           <br className="sm:hidden" />
@@ -408,60 +499,79 @@ export default function Home() {
             </ol>
           </div>
 
-          {/* Reply body with blur + PRO banner */}
+          {/* Reply body — locked preview or full PRO body */}
           <div className="relative overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-6">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold tracking-wide text-slate-300">
                 返信本文
                 <span className="ml-2 text-xs font-normal text-slate-500">
-                  （無料プレビュー）
+                  {isProUnlocked ? "（全文・PRO）" : "（無料プレビュー）"}
                 </span>
               </h2>
-              <CopyButton text={result.freePreview} label="プレビューをコピー" />
+              <CopyButton
+                text={isProUnlocked ? result.replyBody : result.freePreview}
+                label={isProUnlocked ? "全文をコピー" : "プレビューをコピー"}
+              />
             </div>
 
-            <div className="relative">
-              <div className="rounded-lg border border-slate-700/40 bg-slate-950/30 p-3">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
-                  {result.freePreview}
-                </p>
+            {isProUnlocked ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  PRO版利用中（ロック解除済み）— フル本文を表示しています
+                </div>
+                <div className="rounded-lg border border-slate-700/40 bg-slate-950/30 p-4">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                    {result.replyBody}
+                  </p>
+                </div>
               </div>
+            ) : (
+              <div className="relative">
+                <div className="rounded-lg border border-slate-700/40 bg-slate-950/30 p-3">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                    {result.freePreview}
+                  </p>
+                </div>
 
-              <div className="relative mt-3 max-h-48 overflow-hidden">
-                <p
-                  className="select-none whitespace-pre-wrap text-sm leading-relaxed text-slate-300 blur-[6px]"
-                  aria-hidden
-                >
-                  {result.replyBody}
-                </p>
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/40 to-slate-900/95" />
-              </div>
+                <div className="relative mt-3 max-h-48 overflow-hidden">
+                  <p
+                    className="select-none whitespace-pre-wrap text-sm leading-relaxed text-slate-300 blur-[6px]"
+                    aria-hidden
+                  >
+                    {result.replyBody}
+                  </p>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/40 to-slate-900/95" />
+                </div>
 
-              <div className="relative z-10 -mt-6 rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 via-slate-900/90 to-slate-950 p-5 text-center shadow-lg shadow-amber-900/20">
-                <p className="text-xs font-medium tracking-wider text-amber-400/90 uppercase">
-                  PRO PLAN
-                </p>
-                <p className="mt-1 text-lg font-bold text-slate-50">
-                  全文ロック解除 —{" "}
-                  <span className="text-amber-300">月額 980円</span>
-                </p>
-                <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-400">
-                  ぼかし部分を含む完全な返信本文のコピー・履歴保存は PRO
-                  プランでご利用いただけます。
-                </p>
-                <button
-                  type="button"
-                  className="mt-4 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400"
-                  onClick={() =>
-                    alert(
-                      "デモ版です。実際の課金導線は決済連携後に有効化されます。"
-                    )
-                  }
-                >
-                  PROプランで全文を見る
-                </button>
+                <div className="relative z-10 -mt-6 rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 via-slate-900/90 to-slate-950 p-5 text-center shadow-lg shadow-amber-900/20">
+                  <p className="text-xs font-medium tracking-wider text-amber-400/90 uppercase">
+                    PRO PLAN — LOCKED
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-50">
+                    980円で鍵を解除 —{" "}
+                    <span className="text-amber-300">月額 980円</span>
+                  </p>
+                  <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-400">
+                    ぼかし部分を含む完全な返信本文の表示・コピーは PRO
+                    プランでご利用いただけます。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleUnlockClick}
+                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400"
+                  >
+                    980円で鍵を解除
+                  </button>
+                  {!getStripePaymentLink() && (
+                    <p className="mt-3 text-[11px] text-slate-500">
+                      ※ Payment Link 未設定のため、クリックでデモ解除（
+                      <code className="text-slate-400">?payment=success</code>
+                      ）します
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Prevention notes */}
