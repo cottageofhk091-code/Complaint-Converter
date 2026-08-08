@@ -1,41 +1,107 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-
-type FormState = {
-  name: string;
-  email: string;
-  subject: string;
-  message: string;
-};
-
-const INITIAL: FormState = {
-  name: "",
-  email: "",
-  subject: "",
-  message: "",
-};
+import { FormEvent, useRef, useState } from "react";
 
 const inputClassName =
   "w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm leading-relaxed text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30";
 
 export default function ContactPage() {
-  const [form, setForm] = useState<FormState>(INITIAL);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sendingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  async function postContact(payload: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+  }) {
+    console.log("[contact] sending request...", payload);
+
+    const res = await fetch("/api/contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    let data: { error?: string; ok?: boolean; notified?: boolean } = {};
+    try {
+      data = (await res.json()) as typeof data;
+    } catch {
+      data = {};
+    }
+
+    console.log("[contact] response received", {
+      status: res.status,
+      ok: res.ok,
+      data,
+    });
+
+    if (!res.ok) {
+      throw new Error(data.error || `送信に失敗しました（HTTP ${res.status}）`);
+    }
+
+    return data;
   }
 
-  async function handleSubmit(e: FormEvent) {
+  function handleButtonClick() {
+    console.log("[contact] button click");
+    void (async () => {
+      if (sendingRef.current) {
+        console.log("[contact] skip: already sending");
+        return;
+      }
+
+      console.log("[contact] submit start");
+
+      const formEl = formRef.current;
+      const fd = formEl ? new FormData(formEl) : null;
+      const payload = {
+        name: String(fd?.get("name") ?? "").trim(),
+        email: String(fd?.get("email") ?? "").trim(),
+        subject: String(fd?.get("subject") ?? "").trim(),
+        message: String(fd?.get("message") ?? "").trim(),
+      };
+
+      console.log("[contact] form values collected", {
+        hasName: !!payload.name,
+        hasEmail: !!payload.email,
+        hasSubject: !!payload.subject,
+        messageLength: payload.message.length,
+      });
+
+      sendingRef.current = true;
+      setSubmitting(true);
+      setError(null);
+
+      try {
+        await postContact(payload);
+        console.log("[contact] success");
+        setSubmitted(true);
+        formEl?.reset();
+      } catch (err) {
+        console.log("[contact] failed", err);
+        setError(
+          err instanceof Error ? err.message : "送信中にエラーが発生しました。"
+        );
+      } finally {
+        sendingRef.current = false;
+        setSubmitting(false);
+        console.log("[contact] submit end");
+      }
+    })();
+  }
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    // Enter キー送信も同じ経路へ
     e.preventDefault();
-    setSubmitting(true);
-    // デモ：バックエンド未接続のためクライアント側で受付完了を表示
-    await new Promise((r) => setTimeout(r, 600));
-    setSubmitting(false);
-    setSubmitted(true);
+    e.stopPropagation();
+    console.log("[contact] form onSubmit -> button path");
+    handleButtonClick();
   }
 
   if (submitted) {
@@ -69,7 +135,7 @@ export default function ContactPage() {
               type="button"
               onClick={() => {
                 setSubmitted(false);
-                setForm(INITIAL);
+                setError(null);
               }}
               className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
             >
@@ -112,58 +178,89 @@ export default function ContactPage() {
           </p>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <Field label="お名前" htmlFor="name" required>
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          noValidate
+          className="space-y-5"
+        >
+          <div>
+            <label
+              htmlFor="contact-name"
+              className="mb-2 block text-sm font-medium text-slate-200"
+            >
+              お名前
+            </label>
             <input
-              id="name"
-              required
-              value={form.name}
-              onChange={(e) => update("name", e.target.value)}
+              id="contact-name"
+              name="name"
               className={inputClassName}
               placeholder="山田 太郎"
               autoComplete="name"
             />
-          </Field>
+          </div>
 
-          <Field label="メールアドレス" htmlFor="email" required>
+          <div>
+            <label
+              htmlFor="contact-email"
+              className="mb-2 block text-sm font-medium text-slate-200"
+            >
+              メールアドレス
+              <span className="ml-1 text-red-400">*</span>
+            </label>
             <input
-              id="email"
+              id="contact-email"
+              name="email"
               type="email"
-              required
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
               className={inputClassName}
               placeholder="you@example.com"
               autoComplete="email"
             />
-          </Field>
+          </div>
 
-          <Field label="件名" htmlFor="subject" required>
+          <div>
+            <label
+              htmlFor="contact-subject"
+              className="mb-2 block text-sm font-medium text-slate-200"
+            >
+              件名
+              <span className="ml-1 text-red-400">*</span>
+            </label>
             <input
-              id="subject"
-              required
-              value={form.subject}
-              onChange={(e) => update("subject", e.target.value)}
+              id="contact-subject"
+              name="subject"
               className={inputClassName}
               placeholder="例：PROプランについて"
             />
-          </Field>
+          </div>
 
-          <Field label="お問い合わせ内容" htmlFor="message" required>
+          <div>
+            <label
+              htmlFor="contact-message"
+              className="mb-2 block text-sm font-medium text-slate-200"
+            >
+              お問い合わせ内容
+              <span className="ml-1 text-red-400">*</span>
+            </label>
             <textarea
-              id="message"
-              required
+              id="contact-message"
+              name="message"
               rows={7}
-              value={form.message}
-              onChange={(e) => update("message", e.target.value)}
               className={`${inputClassName} resize-y`}
               placeholder="具体的な内容をご記入ください"
             />
-          </Field>
+          </div>
+
+          {error && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {error}
+            </div>
+          )}
 
           <button
-            type="submit"
+            type="button"
             disabled={submitting}
+            onClick={handleButtonClick}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "送信中…" : "送信する"}
@@ -181,30 +278,5 @@ export default function ContactPage() {
         </Link>
       </div>
     </main>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  required,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label
-        htmlFor={htmlFor}
-        className="mb-2 block text-sm font-medium text-slate-200"
-      >
-        {label}
-        {required && <span className="ml-1 text-red-400">*</span>}
-      </label>
-      {children}
-    </div>
   );
 }
