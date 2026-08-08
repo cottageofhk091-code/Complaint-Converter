@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import LegalPageShell, { LegalSection } from "@/components/LegalPageShell";
 
 export const metadata: Metadata = {
-  title: "利用規約・免責事項 | クレーム・お詫びメール神対応変換器",
+  title: "利用規約・免責事項",
   description:
-    "クレーム・お詫びメール神対応変換器の利用規約および免責事項です。",
+    "Smartお詫びコンシェルジュの利用規約および免責事項です。",
 };
 
 export default function TermsPage() {
@@ -12,7 +12,7 @@ export default function TermsPage() {
     <LegalPageShell title="利用規約・免責事項" updatedAt="2026年8月5日">
       <LegalSection title="1. はじめに">
         <p>
-          本利用規約（以下「本規約」）は、「クレーム・お詫びメール神対応変換器」（以下「本サービス」）の利用条件を定めるものです。本サービスをご利用いただくことで、本規約に同意したものとみなします。
+          本利用規約（以下「本規約」）は、「Smartお詫びコンシェルジュ」（以下「本サービス」）の利用条件を定めるものです。本サービスをご利用いただくことで、本規約に同意したものとみなします。
         </p>
       </LegalSection>
 

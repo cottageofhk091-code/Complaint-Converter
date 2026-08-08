@@ -32,10 +32,10 @@ export default function Footer() {
           ))}
         </nav>
         <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-600">
-          © {new Date().getFullYear()} クレーム・お詫びメール神対応変換器
+          © {new Date().getFullYear()} Smartお詫びコンシェルジュ
           <br className="sm:hidden" />
           <span className="sm:ml-1">
-            AI生成コンテンツは参考情報です。最終判断は利用者ご自身で行ってください。
+            〜クレーム対応からお詫びメールまで、AIが即座に最適化〜
           </span>
         </p>
       </div>

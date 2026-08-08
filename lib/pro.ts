@@ -35,8 +35,7 @@ export function hasUnlockQueryParam(search: string): boolean {
   );
 }
 
-export function getStripePaymentLink(): string | undefined {
-  const link = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK?.trim();
-  if (!link || link === "your_stripe_payment_link_here") return undefined;
-  return link;
+export function getCheckoutSessionIdFromSearch(search: string): string | null {
+  const params = new URLSearchParams(search);
+  return params.get("session_id")?.trim() || null;
 }

@@ -1,12 +1,11 @@
 "use client";
 
 import {
-  getStripePaymentLink,
+  getCheckoutSessionIdFromSearch,
   hasUnlockQueryParam,
-  isProUnlockedInStorage,
   LAST_RESULT_STORAGE_KEY,
-  setProUnlockedInStorage,
 } from "@/lib/pro";
+import { useAuth } from "@/components/AuthProvider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type FaultLevel =
@@ -185,6 +184,7 @@ function CopyButton({
 }
 
 export default function Home() {
+  const { user, isProUnlocked, setProUnlocked, loginAs } = useAuth();
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
   const [responsePolicy, setResponsePolicy] =
@@ -193,25 +193,66 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [isProUnlocked, setIsProUnlocked] = useState(false);
   const [showUnlockToast, setShowUnlockToast] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const unlockToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 決済戻り / デモ用クエリ / LocalStorage からロック解除状態を復元
+  // 決済戻りクエリ処理 + 生成結果の復元
   useEffect(() => {
-    const fromQuery = hasUnlockQueryParam(window.location.search);
-    const fromStorage = isProUnlockedInStorage();
+    const search = window.location.search;
+    const fromQuery = hasUnlockQueryParam(search);
+    const sessionId = getCheckoutSessionIdFromSearch(search);
 
-    if (fromQuery) {
-      setProUnlockedInStorage(true);
-      setIsProUnlocked(true);
-      setShowUnlockToast(true);
-      unlockToastTimer.current = setTimeout(() => setShowUnlockToast(false), 4000);
-      // クエリを消してリロード時の再トーストを防ぐ
+    async function handlePaymentReturn() {
+      if (!fromQuery && !sessionId) return;
+
+      let unlocked = false;
+
+      if (sessionId) {
+        try {
+          const res = await fetch("/api/stripe/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId,
+              email: user?.email || undefined,
+            }),
+          });
+          const data = (await res.json()) as {
+            unlocked?: boolean;
+            email?: string | null;
+          };
+          unlocked = !!data.unlocked;
+        } catch (err) {
+          console.error("[verify session]", err);
+        }
+      }
+
+      // 開発用デモ（?payment=success）または検証成功時のみ解除
+      if (
+        unlocked ||
+        (fromQuery && new URLSearchParams(search).get("payment") === "success")
+      ) {
+        setProUnlocked(true);
+        if (!user || user.plan !== "pro") {
+          loginAs("pro");
+        }
+        setShowUnlockToast(true);
+        unlockToastTimer.current = setTimeout(
+          () => setShowUnlockToast(false),
+          4000
+        );
+      } else if (fromQuery && sessionId) {
+        // unlocked=true だが検証未完了（Webhook遅延など）
+        alert(
+          "決済の確認中です。しばらくしてからページを再読み込みするか、サポートへお問い合わせください。"
+        );
+      }
+
       window.history.replaceState({}, "", window.location.pathname);
-    } else if (fromStorage) {
-      setIsProUnlocked(true);
     }
+
+    void handlePaymentReturn();
 
     try {
       const saved = sessionStorage.getItem(LAST_RESULT_STORAGE_KEY);
@@ -225,6 +266,7 @@ export default function Home() {
     return () => {
       if (unlockToastTimer.current) clearTimeout(unlockToastTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 初回の決済戻り処理のみ
   }, []);
 
   // 生成結果を決済リダイレクト前後で保持
@@ -237,7 +279,7 @@ export default function Home() {
     }
   }, [result]);
 
-  function handleUnlockClick() {
+  async function handleUnlockClick() {
     if (result) {
       try {
         sessionStorage.setItem(LAST_RESULT_STORAGE_KEY, JSON.stringify(result));
@@ -246,15 +288,46 @@ export default function Home() {
       }
     }
 
-    const paymentLink = getStripePaymentLink();
-    if (paymentLink) {
-      // Stripe Dashboard 側の成功URLを `/?unlocked=true` に設定してください
-      window.location.href = paymentLink;
-      return;
-    }
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user?.email || undefined,
+        }),
+      });
+      const data = (await res.json()) as {
+        checkoutUrl?: string;
+        url?: string;
+        error?: string;
+      };
 
-    // Payment Link 未設定時の動作確認用（ローカルデモ）
-    window.location.href = "/?payment=success";
+      if (!res.ok || !(data.checkoutUrl || data.url)) {
+        throw new Error(data.error || "Checkout の開始に失敗しました。");
+      }
+
+      window.location.href = (data.checkoutUrl || data.url)!;
+    } catch (err) {
+      console.error("[checkout]", err);
+      const message =
+        err instanceof Error ? err.message : "決済の開始に失敗しました。";
+
+      // 開発用フォールバック（Stripe未設定時）
+      const useDemo =
+        message.includes("STRIPE_") ||
+        message.includes("設定されていません") ||
+        confirm(
+          `${message}\n\nデモ解除（?payment=success）に切り替えますか？`
+        );
+
+      if (useDemo) {
+        window.location.href = "/?payment=success";
+      } else {
+        alert(message);
+        setCheckoutLoading(false);
+      }
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -300,8 +373,8 @@ export default function Home() {
 
       <header className="mb-10 text-center animate-fade-up">
         <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-          <p className="text-xs font-medium tracking-[0.2em] text-blue-400/80 uppercase">
-            Crisis Mail Assistant
+          <p className="text-xs font-medium tracking-[0.15em] text-blue-400/80">
+            Smart Concierge
           </p>
           {isProUnlocked && (
             <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300">
@@ -310,14 +383,12 @@ export default function Home() {
           )}
         </div>
         <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-50 sm:text-3xl">
-          クレーム・お詫びメール
-          <br className="sm:hidden" />
           <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-            神対応変換器
+            Smartお詫びコンシェルジュ
           </span>
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
-          状況を入力するだけで、過失認定リスクと炎上を抑えた返信メール案を生成します。
+          〜クレーム対応からお詫びメールまで、AIが即座に最適化〜
         </p>
       </header>
 
@@ -558,17 +629,16 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={handleUnlockClick}
-                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400"
+                    disabled={checkoutLoading}
+                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    980円で鍵を解除
+                    {checkoutLoading
+                      ? "決済ページへ移動中…"
+                      : "有料プランに登録する（月額980円）"}
                   </button>
-                  {!getStripePaymentLink() && (
-                    <p className="mt-3 text-[11px] text-slate-500">
-                      ※ Payment Link 未設定のため、クリックでデモ解除（
-                      <code className="text-slate-400">?payment=success</code>
-                      ）します
-                    </p>
-                  )}
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    Stripe Checkout で安全に決済できます。完了後に全文ロックが解除されます。
+                  </p>
                 </div>
               </div>
             )}

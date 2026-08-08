@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import LegalPageShell, { LegalSection } from "@/components/LegalPageShell";
 
 export const metadata: Metadata = {
-  title: "プライバシーポリシー | クレーム・お詫びメール神対応変換器",
-  description:
-    "クレーム・お詫びメール神対応変換器のプライバシーポリシーです。",
+  title: "プライバシーポリシー",
+  description: "Smartお詫びコンシェルジュのプライバシーポリシーです。",
 };
 
 export default function PrivacyPage() {
@@ -12,7 +11,7 @@ export default function PrivacyPage() {
     <LegalPageShell title="プライバシーポリシー" updatedAt="2026年8月5日">
       <LegalSection title="1. 基本方針">
         <p>
-          「クレーム・お詫びメール神対応変換器」（以下「本サービス」）の運営者（以下「当方」）は、利用者の個人情報および入力データの取扱いについて、本プライバシーポリシーに従い適切に保護します。
+          「Smartお詫びコンシェルジュ」（以下「本サービス」）の運営者（以下「当方」）は、利用者の個人情報および入力データの取扱いについて、本プライバシーポリシーに従い適切に保護します。
         </p>
       </LegalSection>
 

@@ -2,15 +2,13 @@ import type { Metadata } from "next";
 import LegalPageShell, { LegalSection } from "@/components/LegalPageShell";
 
 export const metadata: Metadata = {
-  title: "特定商取引法に基づく表記 | クレーム・お詫びメール神対応変換器",
-  description:
-    "クレーム・お詫びメール神対応変換器の特定商取引法に基づく表記です。",
+  title: "特定商取引法に基づく表記",
+  description: "Smartお詫びコンシェルジュの特定商取引法に基づく表記です。",
 };
 
-/** 公開前に実情報へ差し替えてください */
 const SELLER = {
-  name: "個人運営（クレーム・お詫びメール神対応変換器）",
-  operator: "運営者名（公開準備中）",
+  name: "Nomad Flow Lab",
+  operator: "Hiroki matsushita",
   email: "support@example.com",
   address: "請求があった場合に遅滞なく開示します",
   phone: "請求があった場合に遅滞なく開示します",
@@ -80,7 +78,7 @@ export default function TokushohoPage() {
 
       <LegalSection title="補足">
         <p>
-          表記内容は公開準備中の項目を含む場合があります。正式公開時に事業者名・連絡先等を確定情報へ更新します。ご不明点は
+          所在地・電話番号等は、請求があった場合に遅滞なく開示します。ご不明点は
           <a href="/contact" className="text-blue-400 hover:underline">
             お問い合わせ
           </a>

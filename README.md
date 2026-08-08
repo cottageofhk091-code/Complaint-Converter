@@ -1,4 +1,6 @@
-# クレーム・お詫びメール神対応変換器
+# Smartお詫びコンシェルジュ
+
+〜クレーム対応からお詫びメールまで、AIが即座に最適化〜
 
 Dark-mode Next.js app that converts claim / complaint situations into carefully crafted apology or response emails using the Gemini API.
 
@@ -14,12 +16,17 @@ npm install
 
 ```
 GEMINI_API_KEY=your_actual_api_key
-NEXT_PUBLIC_STRIPE_PAYMENT_LINK=https://buy.stripe.com/xxxxx
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxx
+STRIPE_SECRET_KEY=sk_test_xxxxx
+STRIPE_PRICE_ID=price_xxxxx
+STRIPE_WEBHOOK_SECRET=whsec_xxxxx
 ```
 
-- `NEXT_PUBLIC_STRIPE_PAYMENT_LINK` … Stripe Payment Link の URL
-- Stripe Dashboard 側の決済完了後リダイレクト先を `https://あなたのドメイン/?unlocked=true` に設定してください
-- 未設定の場合は「980円で鍵を解除」クリックで `/?payment=success` によるデモ解除が動作します
+- Checkout の success/cancel は `NEXT_PUBLIC_APP_URL` を優先（未設定時は `http://localhost:3000`）
+- Webhook エンドポイント: `POST /api/stripe/webhook`（`checkout.session.completed` で PRO 解除を記録）
+- 決済戻り後は `/api/stripe/verify` で session を検証してからロック解除
+- ローカル Webhook 例: `stripe listen --forward-to localhost:3000/api/stripe/webhook`
 
 3. Run the development server:
 
@@ -35,4 +42,4 @@ Open [http://localhost:3000](http://localhost:3000).
 - Tailwind CSS
 - TypeScript
 - `@google/genai` (Gemini Interactions API)
-- Stripe Payment Link（PRO ロック解除）
+- Stripe Checkout + Webhook（PRO ロック解除）
