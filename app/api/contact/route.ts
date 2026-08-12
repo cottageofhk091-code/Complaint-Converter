@@ -15,6 +15,18 @@ function truncate(text: string, max = 1000): string {
   return `${t.slice(0, max - 1)}…`;
 }
 
+const APP_NAME = "Smartお詫びコンシェルジュ";
+
+function buildGmailComposeUrl(email: string): string {
+  const params = new URLSearchParams({
+    view: "cm",
+    fs: "1",
+    to: email,
+    su: `【お問い合わせへの返信】${APP_NAME}`,
+  });
+  return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
 async function notifyDiscord(payload: {
   name: string;
   email: string;
@@ -30,35 +42,47 @@ async function notifyDiscord(payload: {
     return "skipped";
   }
 
+  const displayName =
+    payload.name && payload.name !== "未入力"
+      ? `${truncate(payload.name, 200)} 様`
+      : "未入力";
+  const emailCode = `\`${truncate(payload.email, 250)}\``;
+  const gmailUrl = buildGmailComposeUrl(payload.email);
+  const contentValue = truncate(
+    `【件名】${payload.subject || "未入力"}\n\n${payload.message || "未入力"}`,
+    1000
+  );
+
   try {
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: "Smartお詫びコンシェルジュ お問い合わせ通知",
+        username: `${APP_NAME} お問い合わせ通知`,
         embeds: [
           {
             title: "📩 新しいお問い合わせが届きました",
-            color: 0x5865f2,
+            color: 3447003,
+            description: [
+              "👤 送信者メールアドレス:",
+              `${emailCode} (クリックでコピー)`,
+              "",
+              `🚀 [✉️ Web版Gmailで返信画面を開く](${gmailUrl})`,
+            ].join("\n"),
             fields: [
               {
-                name: "お名前 / ユーザー",
-                value: truncate(payload.name || "未入力", 256),
+                name: "お名前",
+                value: displayName,
                 inline: true,
               },
               {
                 name: "メールアドレス",
-                value: truncate(payload.email || "未入力", 256),
+                value: emailCode,
                 inline: true,
               },
               {
-                name: "件名",
-                value: truncate(payload.subject || "未入力", 256),
-                inline: false,
-              },
-              {
                 name: "お問い合わせ内容",
-                value: truncate(payload.message || "未入力", 1000),
+                value: contentValue,
                 inline: false,
               },
             ],
