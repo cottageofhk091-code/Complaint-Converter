@@ -18,6 +18,7 @@ export function loadUserFromStorage(): AuthUser | null {
       id: parsed.id,
       name: parsed.name || "ユーザー",
       email: parsed.email,
+      // plan は表示用。PRO 実権は Checkout Session 検証が正本。
       plan: parsed.plan === "pro" ? "pro" : "free",
     };
   } catch {
@@ -38,20 +39,18 @@ export function saveUserToStorage(user: AuthUser | null): void {
   }
 }
 
-export function createDemoUser(
-  partial?: Partial<Pick<AuthUser, "name" | "email" | "plan">>
-): AuthUser {
-  const plan = partial?.plan === "pro" ? "pro" : "free";
-  const email =
-    partial?.email?.trim() ||
-    (plan === "pro" ? "pro@example.com" : "user@example.com");
-  const name =
-    partial?.name?.trim() || (plan === "pro" ? "PROユーザー" : "フリーユーザー");
+/** メールログイン用ユーザー作成（常に free。PRO は決済検証後に付与） */
+export function createUser(partial?: {
+  name?: string;
+  email?: string;
+}): AuthUser {
+  const email = partial?.email?.trim() || "user@example.com";
+  const name = partial?.name?.trim() || "ユーザー";
 
   return {
     id: `user_${Date.now().toString(36)}`,
     name,
     email,
-    plan,
+    plan: "free",
   };
 }

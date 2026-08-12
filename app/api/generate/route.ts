@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { resolveProAccess } from "@/lib/pro-access";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -24,6 +25,8 @@ interface GenerateRequest {
   faultLevel: FaultLevel;
   responsePolicy: ResponsePolicy;
   tone: Tone;
+  /** 検証済み Stripe Checkout Session ID（PRO 全文返却に必須） */
+  checkoutSessionId?: string;
 }
 
 interface GenerateResult {
@@ -33,6 +36,8 @@ interface GenerateResult {
   replyBody: string;
   preventionNotes: string[];
   freePreview: string;
+  isPro: boolean;
+  paywalled: boolean;
 }
 
 const FAULT_LABELS: Record<FaultLevel, string> = {
@@ -98,11 +103,11 @@ ${body.content}
 上記に基づき、危機管理に配慮した返信メール案をJSONで出力してください。`;
 }
 
-function extractJson(text: string): GenerateResult {
+function extractJson(text: string): Omit<GenerateResult, "isPro" | "paywalled"> {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = fenced ? fenced[1].trim() : trimmed;
-  const parsed = JSON.parse(raw) as GenerateResult;
+  const parsed = JSON.parse(raw) as Omit<GenerateResult, "isPro" | "paywalled">;
 
   if (!parsed.riskLevel || !parsed.replyBody || !parsed.subjectSuggestions) {
     throw new Error("Incomplete JSON from model");
@@ -117,6 +122,27 @@ function extractJson(text: string): GenerateResult {
   }
 
   return parsed;
+}
+
+/** 非 PRO 向け: 全文・防止メモをサーバー側で除去 */
+function applyPaywall(
+  result: Omit<GenerateResult, "isPro" | "paywalled">,
+  isPro: boolean
+): GenerateResult {
+  if (isPro) {
+    return { ...result, isPro: true, paywalled: false };
+  }
+
+  return {
+    riskLevel: result.riskLevel,
+    riskReason: result.riskReason,
+    subjectSuggestions: result.subjectSuggestions,
+    freePreview: result.freePreview,
+    replyBody: "",
+    preventionNotes: [],
+    isPro: false,
+    paywalled: true,
+  };
 }
 
 function errorText(err: unknown): string {
@@ -282,7 +308,7 @@ export async function POST(req: NextRequest) {
           error:
             "GEMINI_API_KEY が設定されていません。.env.local を確認してください。",
         },
-        { status: 500 }
+        { status: 503 }
       );
     }
 
@@ -311,6 +337,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const checkoutSessionId =
+      body.checkoutSessionId?.trim() ||
+      req.headers.get("x-checkout-session-id")?.trim() ||
+      null;
+
+    // PRO 判定は KV 上の entitlement のみ（fail-closed）。email 単独・Stripe 直照会は不可。
+    const access = await resolveProAccess({
+      sessionId: checkoutSessionId,
+      allowEmailLookup: false,
+      kvOnly: true,
+    });
+
     const ai = new GoogleGenAI({ apiKey });
 
     let text: string;
@@ -331,7 +369,8 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = extractJson(text);
-      return NextResponse.json(result);
+      const payload = applyPaywall(result, access.entitled);
+      return NextResponse.json(payload);
     } catch (parseErr) {
       console.error(
         `[/api/generate] JSON parse failed (model=${model}):`,

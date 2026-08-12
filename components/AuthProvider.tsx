@@ -2,13 +2,13 @@
 
 import {
   AuthUser,
-  createDemoUser,
+  createUser,
   loadUserFromStorage,
   saveUserToStorage,
 } from "@/lib/auth";
 import {
-  isProUnlockedInStorage,
-  setProUnlockedInStorage,
+  getProSessionIdFromStorage,
+  setProSessionIdInStorage,
 } from "@/lib/pro";
 import {
   createContext,
@@ -22,19 +22,20 @@ import {
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  /** 有料機能のロック解除状態（未ログイン時は常に false） */
+  /** サーバー検証済みの Checkout Session を保持しているか */
   isProUnlocked: boolean;
+  /** PRO 全文取得に送る Session ID */
+  proSessionId: string | null;
   ready: boolean;
-  login: (input: {
-    name?: string;
-    email: string;
-    plan?: "free" | "pro";
-  }) => void;
-  loginAs: (plan: "free" | "pro") => void;
+  login: (input: { name?: string; email: string }) => void;
   logout: () => void;
-  setPlan: (plan: "free" | "pro") => void;
-  /** 有料ロックの明示的な切替（デバッグ / 決済完了用） */
-  setProUnlocked: (unlocked: boolean) => void;
+  /** 決済検証成功後に Session ID を保存し PRO 表示にする */
+  activateProFromCheckout: (input: {
+    sessionId: string;
+    email?: string | null;
+  }) => void;
+  /** PRO セッションを破棄（ロック） */
+  clearProAccess: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -47,38 +48,98 @@ function notifyProChanged() {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isProUnlocked, setIsProUnlocked] = useState(false);
+  const [proSessionId, setProSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const storedUser = loadUserFromStorage();
+    let cancelled = false;
 
-    if (!storedUser) {
-      // 未ログインは常に無料（ロック）状態。残留フラグも掃除
-      setProUnlockedInStorage(false);
-      setUser(null);
-      setIsProUnlocked(false);
-    } else {
-      const unlocked =
-        storedUser.plan === "pro" || isProUnlockedInStorage();
-      if (storedUser.plan === "pro") {
-        setProUnlockedInStorage(true);
+    async function hydrate() {
+      const storedUser = loadUserFromStorage();
+      const storedSessionId = getProSessionIdFromStorage();
+
+      if (!storedUser) {
+        setProSessionIdInStorage(null);
+        if (!cancelled) {
+          setUser(null);
+          setProSessionId(null);
+          setReady(true);
+        }
+        return;
       }
-      setUser(storedUser);
-      setIsProUnlocked(unlocked);
+
+      if (!storedSessionId) {
+        const freeUser =
+          storedUser.plan === "pro"
+            ? { ...storedUser, plan: "free" as const }
+            : storedUser;
+        if (freeUser.plan !== storedUser.plan) {
+          saveUserToStorage(freeUser);
+        }
+        if (!cancelled) {
+          setUser(freeUser);
+          setProSessionId(null);
+          setReady(true);
+        }
+        return;
+      }
+
+      // 起動時に Session を再検証（偽の localStorage だけでは PRO にしない）
+      try {
+        const res = await fetch("/api/stripe/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: storedSessionId,
+            email: storedUser.email || undefined,
+          }),
+        });
+        const data = (await res.json()) as {
+          unlocked?: boolean;
+          sessionId?: string | null;
+          email?: string | null;
+        };
+
+        if (cancelled) return;
+
+        if (data.unlocked && (data.sessionId || storedSessionId)) {
+          const sid = data.sessionId || storedSessionId;
+          setProSessionIdInStorage(sid);
+          const nextUser: AuthUser = {
+            ...storedUser,
+            plan: "pro",
+            email: data.email || storedUser.email,
+          };
+          saveUserToStorage(nextUser);
+          setUser(nextUser);
+          setProSessionId(sid);
+        } else {
+          setProSessionIdInStorage(null);
+          const freeUser = { ...storedUser, plan: "free" as const };
+          saveUserToStorage(freeUser);
+          setUser(freeUser);
+          setProSessionId(null);
+        }
+      } catch (err) {
+        console.error("[auth] pro session re-verify failed:", err);
+        if (!cancelled) {
+          // 検証失敗時は fail-closed（ロック）
+          setProSessionIdInStorage(null);
+          const freeUser = { ...storedUser, plan: "free" as const };
+          saveUserToStorage(freeUser);
+          setUser(freeUser);
+          setProSessionId(null);
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     }
 
-    setReady(true);
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const setProUnlocked = useCallback(
-    (unlocked: boolean) => {
-      setProUnlockedInStorage(unlocked);
-      setIsProUnlocked(unlocked);
-      notifyProChanged();
-    },
-    []
-  );
 
   const persistUser = useCallback((next: AuthUser | null) => {
     setUser(next);
@@ -86,75 +147,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    (input: { name?: string; email: string; plan?: "free" | "pro" }) => {
-      const next = createDemoUser({
+    (input: { name?: string; email: string }) => {
+      const next = createUser({
         name: input.name,
         email: input.email,
-        plan: input.plan ?? "free",
       });
-      persistUser(next);
-      if (next.plan === "pro") {
-        setProUnlocked(true);
-      } else {
-        // フリーログイン時は購入済みフラグが残っていれば維持、なければロック
-        setIsProUnlocked(isProUnlockedInStorage());
-        notifyProChanged();
-      }
+      // ログインだけでは PRO にしない。既存の検証済み Session があれば維持。
+      const existingSession = getProSessionIdFromStorage();
+      persistUser(
+        existingSession ? { ...next, plan: "pro" } : next
+      );
+      setProSessionId(existingSession);
+      notifyProChanged();
     },
-    [persistUser, setProUnlocked]
+    [persistUser]
   );
 
-  const loginAs = useCallback(
-    (plan: "free" | "pro") => {
-      const next = createDemoUser({ plan });
-      persistUser(next);
-      setProUnlocked(plan === "pro");
-    },
-    [persistUser, setProUnlocked]
-  );
-
-  const logout = useCallback(() => {
-    // 認証・有料フラグを完全リセット
-    persistUser(null);
-    setProUnlockedInStorage(false);
-    setIsProUnlocked(false);
+  const clearProAccess = useCallback(() => {
+    setProSessionIdInStorage(null);
+    setProSessionId(null);
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, plan: "free" as const };
+      saveUserToStorage(next);
+      return next;
+    });
     notifyProChanged();
-  }, [persistUser]);
+  }, []);
 
-  const setPlan = useCallback(
-    (plan: "free" | "pro") => {
+  const activateProFromCheckout = useCallback(
+    (input: { sessionId: string; email?: string | null }) => {
+      const sid = input.sessionId.trim();
+      if (!sid) return;
+      setProSessionIdInStorage(sid);
+      setProSessionId(sid);
       setUser((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev, plan };
+        const base =
+          prev ??
+          createUser({
+            email: input.email || undefined,
+            name: "PROユーザー",
+          });
+        const next: AuthUser = {
+          ...base,
+          plan: "pro",
+          email: input.email?.trim() || base.email,
+        };
         saveUserToStorage(next);
         return next;
       });
-      setProUnlocked(plan === "pro");
+      notifyProChanged();
     },
-    [setProUnlocked]
+    []
   );
+
+  const logout = useCallback(() => {
+    persistUser(null);
+    setProSessionIdInStorage(null);
+    setProSessionId(null);
+    notifyProChanged();
+  }, [persistUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       isAuthenticated: !!user,
-      isProUnlocked: user ? isProUnlocked : false,
+      isProUnlocked: Boolean(proSessionId),
+      proSessionId,
       ready,
       login,
-      loginAs,
       logout,
-      setPlan,
-      setProUnlocked,
+      activateProFromCheckout,
+      clearProAccess,
     }),
     [
       user,
-      isProUnlocked,
+      proSessionId,
       ready,
       login,
-      loginAs,
       logout,
-      setPlan,
-      setProUnlocked,
+      activateProFromCheckout,
+      clearProAccess,
     ]
   );
 

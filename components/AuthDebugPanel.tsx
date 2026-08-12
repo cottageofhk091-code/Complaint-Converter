@@ -9,7 +9,7 @@ const btnClass =
   "w-full rounded-lg border border-slate-600/80 bg-slate-900/90 px-2.5 py-2 text-left text-[11px] font-medium text-slate-200 transition hover:border-violet-500/50 hover:bg-violet-900/30";
 
 export default function AuthDebugPanel() {
-  const { user, isProUnlocked, loginAs, logout, setProUnlocked, ready } =
+  const { user, isProUnlocked, proSessionId, logout, clearProAccess, ready } =
     useAuth();
   const [open, setOpen] = useState(true);
 
@@ -41,8 +41,17 @@ export default function AuthDebugPanel() {
                   isProUnlocked ? "font-medium text-emerald-400" : "text-slate-400"
                 }
               >
-                {isProUnlocked ? "解除中" : "ロック中"}
+                {isProUnlocked ? "Session 保持中" : "ロック中"}
               </span>
+            </p>
+            {proSessionId && (
+              <p className="mt-1 truncate font-mono text-[10px] text-slate-500">
+                {proSessionId}
+              </p>
+            )}
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+              偽の PRO 解除は不可。全文はサーバーが Session
+              を検証した場合のみ返します。
             </p>
           </div>
 
@@ -51,25 +60,10 @@ export default function AuthDebugPanel() {
               type="button"
               className={btnClass}
               onClick={() => {
-                // 無料・ロック状態へ即時切替
-                if (user) {
-                  loginAs("free");
-                }
-                setProUnlocked(false);
+                clearProAccess();
               }}
             >
-              🔒 無料状態にする（ロック）
-            </button>
-            <button
-              type="button"
-              className={btnClass}
-              onClick={() => {
-                // 有料・解除状態へ即時切替（未ログインなら PRO でログイン）
-                loginAs("pro");
-                setProUnlocked(true);
-              }}
-            >
-              🔓 有料状態にする（解除）
+              ロックする（Session 破棄）
             </button>
             <button
               type="button"
@@ -78,7 +72,7 @@ export default function AuthDebugPanel() {
                 logout();
               }}
             >
-              🚪 ログアウト
+              ログアウト
             </button>
           </div>
         </div>

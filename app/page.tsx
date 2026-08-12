@@ -2,9 +2,14 @@
 
 import {
   getCheckoutSessionIdFromSearch,
-  hasUnlockQueryParam,
+  hasCheckoutReturnQuery,
   LAST_RESULT_STORAGE_KEY,
 } from "@/lib/pro";
+import {
+  formatProCtaLabel,
+  formatProPriceShort,
+  formatProUnlockHeadline,
+} from "@/lib/pricing";
 import { useAuth } from "@/components/AuthProvider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -31,7 +36,19 @@ interface GenerateResult {
   replyBody: string;
   preventionNotes: string[];
   freePreview: string;
+  isPro?: boolean;
+  paywalled?: boolean;
 }
+
+/** 非 PRO 時のぼかし装飾用（実本文はサーバーから返らない） */
+const LOCKED_BODY_PLACEHOLDER = [
+  "（PROプランで全文が表示されます）",
+  "お客様への返信本文は、決済完了後にサーバー側でロック解除されます。",
+  "プレビュー以外の文面は API 応答に含まれません。",
+  "安全な Stripe Checkout 決済のあと、同じ条件で再生成すると全文をご利用いただけます。",
+  "本プレースホルダーはダミー文言です。実際のお詫び文は含まれていません。",
+].join("\n\n");
+
 
 const FAULT_OPTIONS: { value: FaultLevel; label: string }[] = [
   { value: "clear_fault", label: "自社に明確な過失あり" },
@@ -184,7 +201,8 @@ function CopyButton({
 }
 
 export default function Home() {
-  const { user, isProUnlocked, setProUnlocked, loginAs } = useAuth();
+  const { user, isProUnlocked, proSessionId, activateProFromCheckout } =
+    useAuth();
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
   const [responsePolicy, setResponsePolicy] =
@@ -197,56 +215,54 @@ export default function Home() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const unlockToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 決済戻りクエリ処理 + 生成結果の復元
+  // 決済戻りクエリ処理 + 生成結果の復元（検証成功時のみ PRO）
   useEffect(() => {
     const search = window.location.search;
-    const fromQuery = hasUnlockQueryParam(search);
+    const fromCheckout = hasCheckoutReturnQuery(search);
     const sessionId = getCheckoutSessionIdFromSearch(search);
 
     async function handlePaymentReturn() {
-      if (!fromQuery && !sessionId) return;
+      if (!fromCheckout && !sessionId) return;
 
-      let unlocked = false;
-
-      if (sessionId) {
-        try {
-          const res = await fetch("/api/stripe/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId,
-              email: user?.email || undefined,
-            }),
-          });
-          const data = (await res.json()) as {
-            unlocked?: boolean;
-            email?: string | null;
-          };
-          unlocked = !!data.unlocked;
-        } catch (err) {
-          console.error("[verify session]", err);
-        }
+      if (!sessionId) {
+        // unlocked=true だけで session_id が無い戻りは無効
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
       }
 
-      // 開発用デモ（?payment=success）または検証成功時のみ解除
-      if (
-        unlocked ||
-        (fromQuery && new URLSearchParams(search).get("payment") === "success")
-      ) {
-        setProUnlocked(true);
-        if (!user || user.plan !== "pro") {
-          loginAs("pro");
+      try {
+        const res = await fetch("/api/stripe/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            email: user?.email || undefined,
+          }),
+        });
+        const data = (await res.json()) as {
+          unlocked?: boolean;
+          email?: string | null;
+          sessionId?: string | null;
+        };
+
+        if (data.unlocked && (data.sessionId || sessionId)) {
+          activateProFromCheckout({
+            sessionId: data.sessionId || sessionId,
+            email: data.email,
+          });
+          setShowUnlockToast(true);
+          unlockToastTimer.current = setTimeout(
+            () => setShowUnlockToast(false),
+            4000
+          );
+        } else {
+          alert(
+            "決済の確認ができませんでした。反映まで数分かかる場合があります。ページを再読み込みするか、サポートへお問い合わせください。"
+          );
         }
-        setShowUnlockToast(true);
-        unlockToastTimer.current = setTimeout(
-          () => setShowUnlockToast(false),
-          4000
-        );
-      } else if (fromQuery && sessionId) {
-        // unlocked=true だが検証未完了（Webhook遅延など）
-        alert(
-          "決済の確認中です。しばらくしてからページを再読み込みするか、サポートへお問い合わせください。"
-        );
+      } catch (err) {
+        console.error("[verify session]", err);
+        alert("決済の検証中にエラーが発生しました。しばらくしてから再試行してください。");
       }
 
       window.history.replaceState({}, "", window.location.pathname);
@@ -312,21 +328,8 @@ export default function Home() {
       console.error("[checkout]", err);
       const message =
         err instanceof Error ? err.message : "決済の開始に失敗しました。";
-
-      // 開発用フォールバック（Stripe未設定時）
-      const useDemo =
-        message.includes("STRIPE_") ||
-        message.includes("設定されていません") ||
-        confirm(
-          `${message}\n\nデモ解除（?payment=success）に切り替えますか？`
-        );
-
-      if (useDemo) {
-        window.location.href = "/?payment=success";
-      } else {
-        alert(message);
-        setCheckoutLoading(false);
-      }
+      alert(message);
+      setCheckoutLoading(false);
     }
   }
 
@@ -340,7 +343,13 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, faultLevel, responsePolicy, tone }),
+        body: JSON.stringify({
+          content,
+          faultLevel,
+          responsePolicy,
+          tone,
+          checkoutSessionId: proSessionId || undefined,
+        }),
       });
 
       const data = await res.json();
@@ -355,6 +364,8 @@ export default function Home() {
     }
   }
 
+  const showFullBody = Boolean(result?.isPro && result.replyBody);
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
       {showUnlockToast && (
@@ -366,7 +377,7 @@ export default function Home() {
             PRO版のロックを解除しました
           </p>
           <p className="mt-0.5 text-xs text-slate-400">
-            全文表示・コピーが利用できます
+            もう一度生成すると全文・コピーが利用できます
           </p>
         </div>
       )}
@@ -576,16 +587,16 @@ export default function Home() {
               <h2 className="text-sm font-semibold tracking-wide text-slate-300">
                 返信本文
                 <span className="ml-2 text-xs font-normal text-slate-500">
-                  {isProUnlocked ? "（全文・PRO）" : "（無料プレビュー）"}
+                  {showFullBody ? "（全文・PRO）" : "（無料プレビュー）"}
                 </span>
               </h2>
               <CopyButton
-                text={isProUnlocked ? result.replyBody : result.freePreview}
-                label={isProUnlocked ? "全文をコピー" : "プレビューをコピー"}
+                text={showFullBody ? result.replyBody : result.freePreview}
+                label={showFullBody ? "全文をコピー" : "プレビューをコピー"}
               />
             </div>
 
-            {isProUnlocked ? (
+            {showFullBody ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
                   PRO版利用中（ロック解除済み）— フル本文を表示しています
@@ -609,7 +620,7 @@ export default function Home() {
                     className="select-none whitespace-pre-wrap text-sm leading-relaxed text-slate-300 blur-[6px]"
                     aria-hidden
                   >
-                    {result.replyBody}
+                    {LOCKED_BODY_PLACEHOLDER}
                   </p>
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/40 to-slate-900/95" />
                 </div>
@@ -619,8 +630,8 @@ export default function Home() {
                     PRO PLAN — LOCKED
                   </p>
                   <p className="mt-1 text-lg font-bold text-slate-50">
-                    980円で鍵を解除 —{" "}
-                    <span className="text-amber-300">月額 980円</span>
+                    {formatProUnlockHeadline()} —{" "}
+                    <span className="text-amber-300">{formatProPriceShort()}</span>
                   </p>
                   <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-400">
                     ぼかし部分を含む完全な返信本文の表示・コピーは PRO
@@ -634,7 +645,7 @@ export default function Home() {
                   >
                     {checkoutLoading
                       ? "決済ページへ移動中…"
-                      : "有料プランに登録する（月額980円）"}
+                      : formatProCtaLabel()}
                   </button>
                   <p className="mt-3 text-[11px] text-slate-500">
                     Stripe Checkout で安全に決済できます。完了後に全文ロックが解除されます。
@@ -645,6 +656,7 @@ export default function Home() {
           </div>
 
           {/* Prevention notes */}
+          {result.preventionNotes.length > 0 && (
           <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-6">
             <h2 className="mb-3 text-sm font-semibold tracking-wide text-slate-300">
               二次炎上防止メモ
@@ -661,6 +673,7 @@ export default function Home() {
               ))}
             </ul>
           </div>
+          )}
 
           <p className="pb-4 text-center text-xs text-slate-600">
             ※ 本ツールの出力は参考案です。法的判断・最終文面は専門家・社内規程に従ってください。

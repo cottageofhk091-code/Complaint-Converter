@@ -1,4 +1,10 @@
 import { getAppUrl } from "@/lib/app-url";
+import {
+  formatProPriceTaxIncluded,
+  getProPriceYen,
+  PRO_PRICE_CURRENCY,
+  PRO_PRICE_INTERVAL,
+} from "@/lib/pricing";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -15,7 +21,7 @@ export async function POST(req: NextRequest) {
           error:
             "STRIPE_SECRET_KEY が設定されていません。.env.local を確認してください。",
         },
-        { status: 500 }
+        { status: 503 }
       );
     }
 
@@ -25,12 +31,13 @@ export async function POST(req: NextRequest) {
           error:
             "STRIPE_PRICE_ID が設定されていません。.env.local を確認してください。",
         },
-        { status: 500 }
+        { status: 503 }
       );
     }
 
     const stripe = new Stripe(secretKey);
     const appUrl = getAppUrl();
+    const expectedYen = getProPriceYen();
 
     let customerEmail: string | undefined;
     try {
@@ -44,6 +51,43 @@ export async function POST(req: NextRequest) {
     }
 
     const price = await stripe.prices.retrieve(priceId);
+
+    if (price.currency !== PRO_PRICE_CURRENCY) {
+      console.error(
+        `[/api/checkout] currency mismatch: stripe=${price.currency} expected=${PRO_PRICE_CURRENCY}`
+      );
+      return NextResponse.json(
+        {
+          error: `Stripe Price の通貨が不正です（${price.currency}）。${PRO_PRICE_CURRENCY.toUpperCase()} の Price を設定してください。`,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (price.unit_amount !== expectedYen) {
+      console.error(
+        `[/api/checkout] amount mismatch: stripe=${price.unit_amount} expected=${expectedYen}`
+      );
+      return NextResponse.json(
+        {
+          error: `Stripe Price の金額（${price.unit_amount}）がアプリ表記（${formatProPriceTaxIncluded()} = ${expectedYen}）と一致しません。STRIPE_PRICE_ID または NEXT_PUBLIC_PRO_PRICE_YEN を揃えてください。`,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (price.recurring && price.recurring.interval !== PRO_PRICE_INTERVAL) {
+      console.error(
+        `[/api/checkout] interval mismatch: stripe=${price.recurring.interval} expected=${PRO_PRICE_INTERVAL}`
+      );
+      return NextResponse.json(
+        {
+          error: `Stripe Price の課金周期が「${PRO_PRICE_INTERVAL}」ではありません。月額 Price を設定してください。`,
+        },
+        { status: 503 }
+      );
+    }
+
     const mode: Stripe.Checkout.SessionCreateParams.Mode = price.recurring
       ? "subscription"
       : "payment";
@@ -56,6 +100,10 @@ export async function POST(req: NextRequest) {
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       locale: "ja",
+      metadata: {
+        app_price_yen: String(expectedYen),
+        app_price_interval: PRO_PRICE_INTERVAL,
+      },
       ...(customerEmail ? { customer_email: customerEmail } : {}),
     });
 
@@ -70,6 +118,8 @@ export async function POST(req: NextRequest) {
       checkoutUrl: session.url,
       url: session.url,
       sessionId: session.id,
+      priceYen: expectedYen,
+      mode,
     });
   } catch (err) {
     console.error("[/api/checkout]", err);

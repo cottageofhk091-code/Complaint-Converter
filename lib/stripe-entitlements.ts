@@ -130,3 +130,13 @@ export function hasEntitlementForEmail(email: string): boolean {
   const store = readStore();
   return (store.byEmail[normalized]?.length ?? 0) > 0;
 }
+
+/** メールに紐づく最新の Checkout Session ID（無ければ null） */
+export function getLatestSessionIdForEmail(email: string): string | null {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const store = readStore();
+  const list = store.byEmail[normalized];
+  if (!list?.length) return null;
+  return list[list.length - 1] ?? null;
+}

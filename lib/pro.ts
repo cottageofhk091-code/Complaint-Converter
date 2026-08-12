@@ -1,37 +1,51 @@
-/** localStorage: PROロック解除フラグ */
-export const PRO_UNLOCK_STORAGE_KEY = "claim_mail_pro_unlocked";
+/** localStorage: 検証済み Stripe Checkout Session ID（PRO 証明） */
+export const PRO_SESSION_STORAGE_KEY = "claim_mail_pro_session_id";
+
+/** 旧 boolean フラグ（移行時に削除） */
+const LEGACY_PRO_UNLOCK_STORAGE_KEY = "claim_mail_pro_unlocked";
 
 /** sessionStorage: 決済リダイレクト前後で生成結果を保持 */
 export const LAST_RESULT_STORAGE_KEY = "claim_mail_last_result";
 
-export function isProUnlockedInStorage(): boolean {
-  if (typeof window === "undefined") return false;
+export function clearLegacyProUnlockFlag(): void {
+  if (typeof window === "undefined") return;
   try {
-    return localStorage.getItem(PRO_UNLOCK_STORAGE_KEY) === "true";
+    localStorage.removeItem(LEGACY_PRO_UNLOCK_STORAGE_KEY);
   } catch {
-    return false;
+    // ignore
   }
 }
 
-export function setProUnlockedInStorage(unlocked: boolean): void {
+export function getProSessionIdFromStorage(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    clearLegacyProUnlockFlag();
+    const id = localStorage.getItem(PRO_SESSION_STORAGE_KEY)?.trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setProSessionIdInStorage(sessionId: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    if (unlocked) {
-      localStorage.setItem(PRO_UNLOCK_STORAGE_KEY, "true");
+    clearLegacyProUnlockFlag();
+    if (sessionId?.trim()) {
+      localStorage.setItem(PRO_SESSION_STORAGE_KEY, sessionId.trim());
     } else {
-      localStorage.removeItem(PRO_UNLOCK_STORAGE_KEY);
+      localStorage.removeItem(PRO_SESSION_STORAGE_KEY);
     }
   } catch {
     // ignore quota / private mode
   }
 }
 
-/** URLクエリから決済成功・ロック解除を判定 */
-export function hasUnlockQueryParam(search: string): boolean {
+/** Checkout 成功戻り（unlocked=true + session_id）かどうか */
+export function hasCheckoutReturnQuery(search: string): boolean {
   const params = new URLSearchParams(search);
   return (
-    params.get("unlocked") === "true" ||
-    params.get("payment") === "success"
+    params.get("unlocked") === "true" || Boolean(params.get("session_id")?.trim())
   );
 }
 

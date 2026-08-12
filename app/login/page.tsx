@@ -19,7 +19,7 @@ export default function LoginPage() {
       setError("メールアドレスを入力してください。");
       return;
     }
-    login({ name: name.trim() || undefined, email: email.trim(), plan: "free" });
+    login({ name: name.trim() || undefined, email: email.trim() });
     router.push("/");
   }
 
@@ -60,7 +60,8 @@ export default function LoginPage() {
           </p>
           <h1 className="text-2xl font-bold text-slate-50">ログイン</h1>
           <p className="mt-2 text-sm text-slate-400">
-            デモ用の簡易ログインです。メールアドレスを入力して続行できます。
+            メールアドレスを入力して続行できます。PRO
+            機能は Stripe 決済完了後にのみ利用できます。
           </p>
         </header>
 
@@ -107,45 +108,7 @@ export default function LoginPage() {
             ログインする
           </button>
         </form>
-
-        <div className="mt-5 border-t border-slate-700/60 pt-5">
-          <p className="mb-2 text-xs text-slate-500">ワンクリック（デモ）</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <DemoLoginButton
-              label="フリーで入る"
-              onClick={() => {
-                login({ email: "user@example.com", name: "フリーユーザー", plan: "free" });
-                router.push("/");
-              }}
-            />
-            <DemoLoginButton
-              label="PROで入る"
-              onClick={() => {
-                login({ email: "pro@example.com", name: "PROユーザー", plan: "pro" });
-                router.push("/");
-              }}
-            />
-          </div>
-        </div>
       </div>
     </main>
-  );
-}
-
-function DemoLoginButton({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-lg border border-slate-600 bg-slate-950/50 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-blue-500/40 hover:text-blue-300"
-    >
-      {label}
-    </button>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import LegalPageShell, { LegalSection } from "@/components/LegalPageShell";
+import { formatTokushohoPriceLine } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "特定商取引法に基づく表記",
@@ -47,7 +48,7 @@ export default function TokushohoPage() {
               </span>
             </TokushoRow>
             <TokushoRow label="販売価格">
-              PROプラン：月額 980円（税込）
+              {formatTokushohoPriceLine()}
               <br />
               <span className="text-xs text-slate-500">
                 ※無料機能の範囲はトップページの表示に従います。価格改定時は事前に告知します。
