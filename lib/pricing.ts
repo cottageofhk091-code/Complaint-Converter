@@ -3,7 +3,7 @@
  * UI・特商法・Checkout 検証はすべてここ（または NEXT_PUBLIC_PRO_PRICE_YEN）を参照する。
  * Stripe の Price.unit_amount（JPY はゼロデシマル）と一致させること。
  */
-export const PRO_PRICE_YEN = 980;
+export const PRO_PRICE_YEN = 300;
 
 export const PRO_PRICE_CURRENCY = "jpy" as const;
 

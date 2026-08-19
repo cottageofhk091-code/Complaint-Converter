@@ -10,8 +10,25 @@ export type ProAccessResult = {
   entitled: boolean;
   sessionId: string | null;
   email: string | null;
-  source: "kv" | "stripe_api" | "email" | null;
+  source: "kv" | "stripe_api" | "email" | "dev_bypass" | null;
 };
+
+/**
+ * ローカル撮影用の PRO バイパス。
+ * 二重（＋三重）ガードで本番 / Vercel では絶対に有効化しない。
+ */
+export function isDevProBypassEnabled(): boolean {
+  // 1) 本番ビルドでは常に無効（Fail-closed）
+  if (process.env.NODE_ENV !== "development") {
+    return false;
+  }
+  // 2) Vercel 上では環境変数があっても無効（本番・Preview 含む）
+  if (process.env.VERCEL === "1" || process.env.VERCEL_ENV) {
+    return false;
+  }
+  // 3) 明示オプトインのみ
+  return process.env.ALLOW_DEV_BYPASS_PRO?.trim() === "true";
+}
 
 /** 支払い完了とみなす条件（status=complete 単独では解除しない） */
 export function isCheckoutSessionPaid(
@@ -86,6 +103,19 @@ export async function resolveProAccess(input: {
   const email = input.email?.trim().toLowerCase() || null;
   const allowEmailLookup = input.allowEmailLookup === true;
   const kvOnly = input.kvOnly === true;
+
+  // ローカル note 撮影用: development + 明示フラグのみ PRO 扱い
+  if (isDevProBypassEnabled()) {
+    console.warn(
+      "[pro-access] ALLOW_DEV_BYPASS_PRO active (local development only)"
+    );
+    return {
+      entitled: true,
+      sessionId: sessionId || "dev_bypass",
+      email,
+      source: "dev_bypass",
+    };
+  }
 
   if (!sessionId && !(allowEmailLookup && email)) {
     return { entitled: false, sessionId, email, source: null };
