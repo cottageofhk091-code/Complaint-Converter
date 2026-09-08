@@ -41,3 +41,4 @@ next-env.d.ts
 
 # local stripe entitlements store
 .data/
+.env*

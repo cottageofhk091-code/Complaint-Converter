@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { sendGA4Event } from "@/lib/ga4-mp";
 import { resolveProAccess } from "@/lib/pro-access";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -370,6 +371,15 @@ export async function POST(req: NextRequest) {
     try {
       const result = extractJson(text);
       const payload = applyPaywall(result, access.entitled);
+
+      try {
+        await sendGA4Event("apology_generated", {
+          event_category: "concierge",
+        });
+      } catch (gaError) {
+        console.error("GA4 send error:", gaError);
+      }
+
       return NextResponse.json(payload);
     } catch (parseErr) {
       console.error(
