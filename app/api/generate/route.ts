@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { sendGA4Event } from "@/lib/ga4-mp";
 import { resolveProAccess } from "@/lib/pro-access";
+import { supabase } from "@/lib/supabase";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -378,6 +379,23 @@ export async function POST(req: NextRequest) {
         });
       } catch (gaError) {
         console.error("GA4 send error:", gaError);
+      }
+
+      try {
+        if (supabase) {
+          const { error: dbError } = await supabase.from("app_logs").insert([
+            {
+              app_name: "apology",
+              user_type: "unregistered", // ログイン機能実装前は一律 'unregistered'
+              action_type: "generate_apology",
+            },
+          ]);
+          if (dbError) {
+            console.error("Supabase log error:", dbError);
+          }
+        }
+      } catch (dbError) {
+        console.error("Supabase log error:", dbError);
       }
 
       return NextResponse.json(payload);
