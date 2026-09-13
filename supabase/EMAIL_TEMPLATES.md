@@ -16,15 +16,21 @@
 
 **Body（HTML）**  
 `supabase/templates/confirm-signup.html` の内容をそのまま貼り付け  
-（確認リンクは必ず `{{ .ConfirmationURL }}`）
+
+確認リンクは次の形式（PKCE 不要）:
+`{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup`
 
 **Body（テキストのみ使う場合）**
 ```text
 Smartお詫びコンシェルジュへのご登録ありがとうございます。
 以下のリンクをクリックして登録を完了してください。
 
-{{ .ConfirmationURL }}
+{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup
 ```
+
+> 重要: デフォルトの `{{ .ConfirmationURL }}`（PKCE code）だと、
+> メーラー内ブラウザ等で `PKCE code verifier not found` になることがあります。
+> **Token Hash 方式**（上記 URL）を使ってください。アプリの `/auth/callback` が `verifyOtp` で処理します。
 
 4. **URL Configuration**
    - Site URL: 本番ドメイン

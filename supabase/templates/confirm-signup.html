@@ -24,9 +24,13 @@
                 <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#cbd5e1;">
                   以下のリンクをクリックして登録を完了してください。
                 </p>
+                <!--
+                  PKCE 依存を避けるため Token Hash 方式を使用。
+                  Site URL がアプリのオリジンになっていること。
+                -->
                 <p style="margin:0 0 28px;">
                   <a
-                    href="{{ .ConfirmationURL }}"
+                    href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup"
                     style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:8px;"
                   >
                     メールアドレスを確認する
@@ -36,7 +40,7 @@
                   ボタンが開けない場合は、次の URL をブラウザに貼り付けてください。
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.6;word-break:break-all;color:#64748b;">
-                  {{ .ConfirmationURL }}
+                  {{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup
                 </p>
               </td>
             </tr>

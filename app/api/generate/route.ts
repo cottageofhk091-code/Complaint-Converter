@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { sendGA4Event } from "@/lib/ga4-mp";
 import { resolveProAccess } from "@/lib/pro-access";
-import { supabase } from "@/lib/supabase";
+import { createSupabaseAnonClient } from "@/lib/supabase";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -384,6 +384,7 @@ export async function POST(req: NextRequest) {
         console.error("GA4 send error:", gaError);
       }
 
+      const supabase = createSupabaseAnonClient();
       if (supabase) {
         void Promise.resolve(
           supabase.from("app_logs").insert([

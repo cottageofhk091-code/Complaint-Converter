@@ -13,15 +13,15 @@ export const CONFIRM_SIGNUP_EMAIL = {
   subject: "【Smartお詫びコンシェルジュ】メールアドレスの確認",
   /**
    * Dashboard の Confirm signup 本文（テキスト）用。
-   * HTML テンプレートは supabase/templates/confirm-signup.html を使用。
+   * リンクは Token Hash 方式（PKCE 不要）。
    */
   bodyText: [
     "Smartお詫びコンシェルジュへのご登録ありがとうございます。",
     "以下のリンクをクリックして登録を完了してください。",
     "",
-    "{{ .ConfirmationURL }}",
+    "{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup",
   ].join("\n"),
-  /** Dashboard に貼る HTML（ファイルと同内容の要約リンク版） */
+  /** Dashboard に貼る HTML */
   bodyHtmlHintPath: "supabase/templates/confirm-signup.html",
 } as const;
 

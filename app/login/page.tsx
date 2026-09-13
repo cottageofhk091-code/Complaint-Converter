@@ -2,12 +2,15 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const { signIn, isAuthenticated, user, supabaseReady, ready } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const emailConfirmed = searchParams.get("message") === "email-confirmed";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +74,12 @@ export default function LoginPage() {
             登録済みのメールアドレスとパスワードでログインできます。
           </p>
         </header>
+
+        {emailConfirmed && (
+          <p className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+            メールアドレスの確認が完了しました。ログインしてください。
+          </p>
+        )}
 
         {!supabaseReady && (
           <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
@@ -139,5 +148,19 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-md px-4 py-14">
+          <div className="h-40 animate-pulse rounded-2xl bg-slate-800/60" />
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
