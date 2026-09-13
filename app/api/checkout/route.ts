@@ -95,8 +95,10 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       mode,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/?unlocked=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/?canceled=true`,
+      // 完了 → ダッシュボード相当（ホーム）で検証・通知
+      success_url: `${appUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      // キャンセル → 料金ページで通知
+      cancel_url: `${appUrl}/pricing?canceled=true`,
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       locale: "ja",

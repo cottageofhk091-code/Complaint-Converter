@@ -10,6 +10,7 @@ import {
   formatProPriceShort,
   formatProUnlockHeadline,
 } from "@/lib/pricing";
+import { startStripeCheckout } from "@/lib/start-checkout";
 import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
 import PricingModal from "@/components/PricingModal";
 import { useAuth } from "@/components/AuthProvider";
@@ -214,8 +215,26 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [showUnlockToast, setShowUnlockToast] = useState(false);
+  const [statusToast, setStatusToast] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const unlockToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 決済完了・キャンセルの通知（dashboard / pricing からの戻り含む）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") === "success") {
+      setStatusToast("お支払いが完了しました。PROプランが利用可能です。");
+      window.history.replaceState({}, "", window.location.pathname);
+      const t = window.setTimeout(() => setStatusToast(null), 5000);
+      return () => window.clearTimeout(t);
+    }
+    if (params.get("canceled") === "true") {
+      setStatusToast("決済がキャンセルされました。いつでも再開できます。");
+      window.history.replaceState({}, "", window.location.pathname);
+      const t = window.setTimeout(() => setStatusToast(null), 5000);
+      return () => window.clearTimeout(t);
+    }
+  }, []);
 
   // 決済戻りクエリ処理 + 生成結果の復元（検証成功時のみ PRO）
   useEffect(() => {
@@ -308,24 +327,7 @@ export default function Home() {
 
     setCheckoutLoading(true);
     try {
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: user?.email || undefined,
-        }),
-      });
-      const data = (await res.json()) as {
-        checkoutUrl?: string;
-        url?: string;
-        error?: string;
-      };
-
-      if (!res.ok || !(data.checkoutUrl || data.url)) {
-        throw new Error(data.error || "Checkout の開始に失敗しました。");
-      }
-
-      window.location.href = (data.checkoutUrl || data.url)!;
+      await startStripeCheckout({ email: user?.email });
     } catch (err) {
       console.error("[checkout]", err);
       const message =
@@ -393,6 +395,15 @@ export default function Home() {
           <p className="mt-0.5 text-xs text-slate-400">
             もう一度生成すると全文・コピーが利用できます
           </p>
+        </div>
+      )}
+
+      {statusToast && (
+        <div
+          role="status"
+          className="fixed top-4 right-4 left-4 z-50 mx-auto max-w-sm animate-fade-up rounded-xl border border-blue-500/40 bg-slate-900/95 px-4 py-3 text-center shadow-lg shadow-black/40 backdrop-blur sm:left-auto"
+        >
+          <p className="text-sm font-medium text-slate-100">{statusToast}</p>
         </div>
       )}
 

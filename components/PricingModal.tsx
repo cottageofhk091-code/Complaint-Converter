@@ -57,7 +57,7 @@ export default function PricingModal({
             閉じる
           </button>
         </div>
-        <PricingPlanContent />
+        <PricingPlanContent onCheckoutStarted={onClose} />
       </div>
     </div>
   );

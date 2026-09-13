@@ -1,16 +1,49 @@
-import Link from "next/link";
+"use client";
+
+import { useAuth } from "@/components/AuthProvider";
 import {
   FREE_TRIAL_TICKET_LABEL,
   formatFreeTrialPromoHeadline,
+  formatProCtaLabel,
   formatProPriceTaxIncluded,
   PRO_PLAN_FEATURES,
 } from "@/lib/pricing";
+import { startStripeCheckout } from "@/lib/start-checkout";
+import Link from "next/link";
+import { useState } from "react";
 
 export default function PricingPlanContent({
   showSignupCta = true,
+  onCheckoutStarted,
 }: {
   showSignupCta?: boolean;
+  /** Checkout へ遷移する直前（モーダルを閉じる等） */
+  onCheckoutStarted?: () => void;
 }) {
+  const { user, isAuthenticated, isProUnlocked } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const alreadyPro =
+    isProUnlocked || user?.membershipType === "paid" || user?.plan === "pro";
+
+  async function handleCheckout() {
+    setError(null);
+    setLoading(true);
+    try {
+      onCheckoutStarted?.();
+      await startStripeCheckout({ email: user?.email });
+    } catch (err) {
+      console.error("[pricing checkout]", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "決済ページを開けませんでした。時間をおいて再度お試しください。"
+      );
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section>
@@ -64,20 +97,54 @@ export default function PricingPlanContent({
         </p>
       </section>
 
-      {showSignupCta && (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Link
-            href="/signup"
-            className="inline-flex flex-1 items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+      {error && (
+        <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+
+      {alreadyPro ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center text-sm text-emerald-200">
+          すでに PRO プランをご利用中です。
+          <div className="mt-3">
+            <Link
+              href="/"
+              className="inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+            >
+              トップで生成する
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void handleCheckout()}
+            disabled={loading}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            無料会員登録する
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
-          >
-            トップで試す
-          </Link>
+            {loading ? "決済ページへ移動中…" : formatProCtaLabel()}
+          </button>
+          <p className="text-center text-[11px] text-slate-500">
+            クリックすると Stripe の安全な決済画面へ移動します。
+          </p>
+
+          {showSignupCta && !isAuthenticated && (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <Link
+                href="/signup"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+              >
+                先に無料会員登録する
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+              >
+                トップで試す
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>
