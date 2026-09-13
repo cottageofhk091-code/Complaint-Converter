@@ -2,6 +2,7 @@
 
 import type { AuthUser } from "@/lib/auth";
 import { clearLegacyAuthStorage } from "@/lib/auth";
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import {
   fetchProfile,
   markProfilePaid,
@@ -236,7 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(toJapaneseAuthError(error));
 
       if (data.user && data.session) {
         await upsertProfileForUser(data.user.id, email, survey);
@@ -271,7 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: input.password,
       });
 
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(toJapaneseAuthError(error));
 
       if (data.user) {
         const existing = await fetchProfile(data.user.id);

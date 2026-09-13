@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { AGE_GROUP_OPTIONS, REGION_OPTIONS } from "@/lib/survey";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
@@ -55,7 +56,7 @@ export default function SignupPage() {
         router.push("/mypage");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登録に失敗しました。");
+      setError(toJapaneseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -91,8 +92,8 @@ export default function SignupPage() {
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 shadow-xl shadow-black/20 sm:p-7">
         <header className="mb-6 border-b border-slate-700/60 pb-5">
-          <p className="mb-2 text-xs font-medium tracking-[0.15em] text-blue-400/80 uppercase">
-            Sign up
+          <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
+            無料会員登録
           </p>
           <h1 className="text-2xl font-bold text-slate-50">新規会員登録</h1>
           <p className="mt-2 text-sm text-slate-400">

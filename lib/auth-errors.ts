@@ -1,0 +1,123 @@
+/**
+ * Supabase Auth など認証系エラーメッセージの日本語変換。
+ * 画面表示前に必ずこの関数を通す。
+ */
+
+const EXACT_MAP: Record<string, string> = {
+  "Invalid login credentials":
+    "メールアドレスまたはパスワードが正しくありません。",
+  "Email not confirmed":
+    "メールアドレスの確認が完了していません。届いたメールをご確認ください。",
+  "User already registered": "このメールアドレスは既に登録されています。",
+  "Password should be at least 6 characters":
+    "パスワードは6文字以上で入力してください。",
+  "Password should be at least 8 characters":
+    "パスワードは8文字以上で入力してください。",
+  "email rate limit exceeded":
+    "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
+  "Email rate limit exceeded":
+    "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
+  "Invalid email": "メールアドレスの形式が正しくありません。",
+  "Unable to validate email address: invalid format":
+    "メールアドレスの形式が正しくありません。",
+  "User not found": "このメールアドレスは登録されていません。",
+  "Same password":
+    "新しいパスワードは現在のパスワードと異なるものを入力してください。",
+  "New password should be different from the old password.":
+    "新しいパスワードは現在のパスワードと異なるものを入力してください。",
+  "For security purposes, you can only request this after":
+    "セキュリティのため、しばらく時間を置いてから再度お試しください。",
+  "Signup requires a valid password":
+    "有効なパスワードを入力してください。",
+  "Signups not allowed for this instance":
+    "現在、新規登録を受け付けていません。",
+  "Email link is invalid or has expired":
+    "メール内のリンクが無効か、有効期限が切れています。もう一度お試しください。",
+  "Token has expired or is invalid":
+    "認証トークンが無効か、有効期限が切れています。もう一度お試しください。",
+  "Auth session missing!":
+    "ログインセッションが見つかりません。もう一度ログインしてください。",
+  "OTP has expired or is invalid":
+    "認証コードが無効か、有効期限が切れています。",
+  "over_email_send_rate_limit":
+    "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
+};
+
+const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
+  {
+    test: /invalid login credentials/i,
+    message: "メールアドレスまたはパスワードが正しくありません。",
+  },
+  {
+    test: /email not confirmed/i,
+    message:
+      "メールアドレスの確認が完了していません。届いたメールをご確認ください。",
+  },
+  {
+    test: /already (been )?registered|user already exists|already exists/i,
+    message: "このメールアドレスは既に登録されています。",
+  },
+  {
+    test: /password should be at least/i,
+    message: "パスワードは6文字以上で入力してください。",
+  },
+  {
+    test: /rate limit|too many requests|over_email_send_rate_limit/i,
+    message:
+      "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
+  },
+  {
+    test: /invalid email|unable to validate email/i,
+    message: "メールアドレスの形式が正しくありません。",
+  },
+  {
+    test: /user not found|no user found/i,
+    message: "このメールアドレスは登録されていません。",
+  },
+  {
+    test: /same password|different from the old password/i,
+    message:
+      "新しいパスワードは現在のパスワードと異なるものを入力してください。",
+  },
+  {
+    test: /expired|invalid.*(token|link|otp)/i,
+    message:
+      "リンクまたは認証コードが無効か、有効期限が切れています。もう一度お試しください。",
+  },
+  {
+    test: /network|fetch failed|failed to fetch/i,
+    message:
+      "通信エラーが発生しました。ネットワーク接続を確認して再度お試しください。",
+  },
+];
+
+const FALLBACK =
+  "エラーが発生しました。時間をおいて再度お試しください。";
+
+/**
+ * Supabase Auth / 一般 Error を画面表示用の日本語に変換する。
+ */
+export function toJapaneseAuthError(error: unknown): string {
+  const raw =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : "";
+
+  const message = raw.trim();
+  if (!message) return FALLBACK;
+
+  // すでに日本語っぽい場合はそのまま
+  if (/[\u3040-\u30ff\u4e00-\u9fff]/.test(message)) {
+    return message;
+  }
+
+  if (EXACT_MAP[message]) return EXACT_MAP[message];
+
+  for (const rule of PARTIAL_RULES) {
+    if (rule.test.test(message)) return rule.message;
+  }
+
+  return FALLBACK;
+}

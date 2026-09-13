@@ -3,22 +3,15 @@
 # 本番（Hosted Supabase）では Dashboard の Email Templates に反映してください。
 # このファイル群はアプリ側の正本（コピペ用）です。
 #
-# Dashboard:
-#   Authentication → Email Templates → Confirm signup
+# Confirm signup:
+#   件名: 【Smartお詫びコンシェルジュ】メールアドレスの確認
+#   HTML: supabase/templates/confirm-signup.html
 #
-# 件名:
-#   【Smartお詫びコンシェルジュ】メールアドレスの確認
+# Reset password (recovery):
+#   件名: 【Smartお詫びコンシェルジュ】パスワードの再設定
+#   HTML: supabase/templates/reset-password.html
 #
-# 本文（プレーンテキスト例）:
-#   Smartお詫びコンシェルジュへのご登録ありがとうございます。
-#   以下のリンクをクリックして登録を完了してください。
-#
-#   {{ .ConfirmationURL }}
-#
-# HTML 本文:
-#   supabase/templates/confirm-signup.html をコピー
-#
-# パスワード再設定（Recover）も同様に {{ .ConfirmationURL }} を使用します。
+# リンクは Token Hash 方式（PKCE 不要）を使用します。
 
 [project]
 id = "smart-owabi-concierge"
@@ -52,5 +45,5 @@ subject = "【Smartお詫びコンシェルジュ】メールアドレスの確�
 content_path = "./supabase/templates/confirm-signup.html"
 
 [auth.email.template.recovery]
-subject = "【Smartお詫びコンシェルジュ】パスワード再設定"
-content_path = "./supabase/templates/confirm-signup.html"
+subject = "【Smartお詫びコンシェルジュ】パスワードの再設定"
+content_path = "./supabase/templates/reset-password.html"

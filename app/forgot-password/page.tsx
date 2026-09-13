@@ -1,5 +1,6 @@
 "use client";
 
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
@@ -30,8 +31,8 @@ export default function ForgotPasswordPage() {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         {
-          // Supabase テンプレートの {{ .ConfirmationURL }} がこの URL を指す
-          redirectTo: `${origin}/auth/update-password`,
+          // メールテンプレートが Token Hash 方式の場合は callback 経由で update-password へ
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent("/auth/update-password")}`,
         }
       );
       if (resetError) throw resetError;
@@ -39,9 +40,7 @@ export default function ForgotPasswordPage() {
         "パスワード再設定用のメールを送信しました。メール内のリンクから手続きを続けてください。"
       );
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "メール送信に失敗しました。"
-      );
+      setError(toJapaneseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -60,9 +59,12 @@ export default function ForgotPasswordPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-7">
-        <h1 className="text-2xl font-bold text-slate-50">パスワード再設定</h1>
+        <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
+          パスワード再設定
+        </p>
+        <h1 className="text-2xl font-bold text-slate-50">パスワードをお忘れの方</h1>
         <p className="mt-2 text-sm text-slate-400">
-          登録メールアドレス宛に、再設定用リンク（ConfirmationURL）を送信します。
+          登録済みのメールアドレス宛に、再設定用のリンクを送信します。
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -78,6 +80,7 @@ export default function ForgotPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
               autoComplete="email"
+              placeholder="you@example.com"
             />
           </div>
 

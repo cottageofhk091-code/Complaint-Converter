@@ -26,11 +26,12 @@ export const CONFIRM_SIGNUP_EMAIL = {
 } as const;
 
 export const RECOVERY_EMAIL = {
-  subject: "【Smartお詫びコンシェルジュ】パスワード再設定",
+  subject: "【Smartお詫びコンシェルジュ】パスワードの再設定",
   bodyText: [
     "Smartお詫びコンシェルジュのパスワード再設定リクエストを受け付けました。",
     "以下のリンクをクリックして、新しいパスワードを設定してください。",
     "",
-    "{{ .ConfirmationURL }}",
+    "{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/auth/update-password",
   ].join("\n"),
+  bodyHtmlHintPath: "supabase/templates/reset-password.html",
 } as const;

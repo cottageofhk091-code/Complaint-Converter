@@ -23,6 +23,18 @@ export async function GET(request: NextRequest) {
       `${origin}/auth/confirmed?next=${encodeURIComponent(next)}`
     );
 
+  /** パスワード再設定は歓迎画面ではなく設定画面へ */
+  const afterAuthSuccess = (resolvedType: EmailOtpType | null | undefined) => {
+    if (resolvedType === "recovery") {
+      const dest =
+        nextPath.startsWith("/auth/update-password") || nextPath === "/"
+          ? "/auth/update-password"
+          : nextPath;
+      return NextResponse.redirect(`${origin}${dest}`);
+    }
+    return welcome(nextPath === "/mypage" ? "/" : nextPath);
+  };
+
   if (!isSupabaseConfigured()) {
     console.warn("[auth/callback] Supabase not configured — welcome redirect");
     return welcome("/login");
@@ -37,18 +49,24 @@ export async function GET(request: NextRequest) {
         token_hash: tokenHash,
       });
       if (!error) {
-        return welcome(nextPath === "/mypage" ? "/" : nextPath);
+        return afterAuthSuccess(type);
       }
       console.warn(
         "[auth/callback] verifyOtp failed, welcome anyway:",
         error.message
       );
-      return welcome("/login");
+      return type === "recovery"
+        ? NextResponse.redirect(`${origin}/forgot-password`)
+        : welcome("/login");
     }
 
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
+        // code フローでも next が update-password ならそちらへ
+        if (nextPath.startsWith("/auth/update-password")) {
+          return NextResponse.redirect(`${origin}/auth/update-password`);
+        }
         return welcome(nextPath === "/mypage" ? "/" : nextPath);
       }
       console.warn(

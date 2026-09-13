@@ -43,8 +43,8 @@ function ConfirmedContent() {
           ✓
         </div>
 
-        <p className="mb-2 text-center text-xs font-medium tracking-[0.15em] text-emerald-400/90 uppercase">
-          Email confirmed
+        <p className="mb-2 text-center text-xs font-medium tracking-[0.12em] text-emerald-400/90">
+          確認完了
         </p>
         <h1
           id="email-confirmed-title"

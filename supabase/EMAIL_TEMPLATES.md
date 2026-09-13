@@ -6,8 +6,9 @@
 ## 本番（推奨）: Supabase Dashboard
 
 1. [Supabase Dashboard](https://supabase.com/dashboard) → 対象プロジェクト
-2. **Authentication → Email Templates → Confirm signup**
-3. 次を設定して Save
+2. **Authentication → Email Templates**
+
+### Confirm signup（新規登録確認）
 
 **Subject**
 ```text
@@ -17,24 +18,38 @@
 **Body（HTML）**  
 `supabase/templates/confirm-signup.html` の内容をそのまま貼り付け  
 
-確認リンクは次の形式（PKCE 不要）:
+確認リンク（Token Hash / PKCE 不要）:
 `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup`
 
-**Body（テキストのみ使う場合）**
-```text
-Smartお詫びコンシェルジュへのご登録ありがとうございます。
-以下のリンクをクリックして登録を完了してください。
+**Body（テキスト）**  
+`supabase/templates/confirm-signup.txt`
 
-{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup
+### Reset password（パスワード再設定 / Recover）
+
+**Subject**
+```text
+【Smartお詫びコンシェルジュ】パスワードの再設定
 ```
+
+**Body（HTML）**  
+`supabase/templates/reset-password.html`
+
+再設定リンク:
+`{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/auth/update-password`
+
+**Body（テキスト）**  
+`supabase/templates/reset-password.txt`
 
 > 重要: デフォルトの `{{ .ConfirmationURL }}`（PKCE code）だと、
 > メーラー内ブラウザ等で `PKCE code verifier not found` になることがあります。
 > **Token Hash 方式**（上記 URL）を使ってください。アプリの `/auth/callback` が `verifyOtp` で処理します。
 
-4. **URL Configuration**
-   - Site URL: 本番ドメイン
-   - Redirect URLs: `https://あなたのドメイン/auth/callback`
+### URL Configuration
+
+- Site URL: 本番ドメイン
+- Redirect URLs:
+  - `https://あなたのドメイン/auth/callback`
+  - `https://あなたのドメイン/auth/update-password`
 
 アプリ側の定数正本: `lib/supabase-email-templates.ts`
 
@@ -46,6 +61,10 @@ Smartお詫びコンシェルジュへのご登録ありがとうございます
 [auth.email.template.confirmation]
 subject = "【Smartお詫びコンシェルジュ】メールアドレスの確認"
 content_path = "./supabase/templates/confirm-signup.html"
+
+[auth.email.template.recovery]
+subject = "【Smartお詫びコンシェルジュ】パスワードの再設定"
+content_path = "./supabase/templates/reset-password.html"
 ```
 
 ## 補足

@@ -1,4 +1,5 @@
 import type { AuthUser, MembershipType, ProfileRow } from "@/lib/auth";
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import type { AgeGroup, Region } from "@/lib/survey";
 import { getSupabaseOrThrow, supabase } from "@/lib/supabase";
 
@@ -37,7 +38,9 @@ export async function upsertProfileForUser(
     .single();
 
   if (error) {
-    throw new Error(error.message || "プロファイルの保存に失敗しました。");
+    throw new Error(
+      toJapaneseAuthError(error.message || "プロファイルの保存に失敗しました。")
+    );
   }
 
   return data as ProfileRow;

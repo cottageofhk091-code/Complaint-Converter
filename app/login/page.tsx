@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -34,7 +35,7 @@ function LoginForm() {
       await signIn({ email: email.trim(), password });
       router.push("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "ログインに失敗しました。");
+      setError(toJapaneseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -80,8 +81,8 @@ function LoginForm() {
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 shadow-xl shadow-black/20 sm:p-7">
         <header className="mb-6 border-b border-slate-700/60 pb-5">
-          <p className="mb-2 text-xs font-medium tracking-[0.15em] text-blue-400/80 uppercase">
-            Login
+          <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
+            会員ログイン
           </p>
           <h1 className="text-2xl font-bold text-slate-50">ログイン</h1>
           <p className="mt-2 text-sm text-slate-400">

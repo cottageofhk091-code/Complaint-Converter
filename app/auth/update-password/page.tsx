@@ -1,5 +1,6 @@
 "use client";
 
+import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
@@ -15,7 +16,7 @@ export default function UpdatePasswordPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // ConfirmationURL 経由でセッションが確立されるまで待つ
+    // メール内リンク経由でセッションが確立されるまで待つ
     if (!supabase) {
       setReady(true);
       return;
@@ -57,9 +58,7 @@ export default function UpdatePasswordPage() {
       setInfo("パスワードを更新しました。ログイン画面へ移動します…");
       setTimeout(() => router.push("/login"), 1200);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "パスワード更新に失敗しました。"
-      );
+      setError(toJapaneseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -68,9 +67,12 @@ export default function UpdatePasswordPage() {
   return (
     <main className="mx-auto max-w-md px-4 py-10 sm:px-6 sm:py-14">
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-7">
-        <h1 className="text-2xl font-bold text-slate-50">新しいパスワード</h1>
+        <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
+          パスワード再設定
+        </p>
+        <h1 className="text-2xl font-bold text-slate-50">新しいパスワードの設定</h1>
         <p className="mt-2 text-sm text-slate-400">
-          メールの ConfirmationURL から遷移後、新しいパスワードを設定してください。
+          メール内のリンクから遷移後、新しいパスワードを設定してください。
         </p>
 
         {!ready ? (
@@ -79,7 +81,7 @@ export default function UpdatePasswordPage() {
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
               <label htmlFor="password" className="mb-2 block text-sm text-slate-200">
-                新しいパスワード
+                新しいパスワード（8文字以上）
               </label>
               <input
                 id="password"
@@ -131,7 +133,7 @@ export default function UpdatePasswordPage() {
 
         <p className="mt-5 text-center text-xs text-slate-500">
           <Link href="/login" className="text-blue-400 hover:underline">
-            ログインへ
+            ログインへ戻る
           </Link>
         </p>
       </div>
