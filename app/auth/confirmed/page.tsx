@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { formatFreeTrialGrantedMessage } from "@/lib/pricing";
 import Link from "next/link";
 import { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -60,6 +61,15 @@ function ConfirmedContent() {
           <br />
           Smartお詫びコンシェルジュへようこそ。
         </p>
+
+        <div className="mt-5 rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-center">
+          <p className="text-xs font-semibold tracking-wide text-amber-300">
+            初回特典
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-amber-50">
+            {formatFreeTrialGrantedMessage()}
+          </p>
+        </div>
 
         <div className="mt-8 flex flex-col gap-3">
           <button

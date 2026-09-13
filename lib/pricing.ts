@@ -38,3 +38,25 @@ export function formatProCtaLabel(): string {
 export function formatTokushohoPriceLine(): string {
   return `PROプラン：${formatProPriceTaxIncluded()}`;
 }
+
+/** 無料会員向け・有料プラン1回無料キャンペーン */
+export const FREE_TRIAL_TICKET_LABEL = "有料プラン1回無料チケット";
+
+export function formatFreeTrialPromoHeadline(): string {
+  return "今なら無料会員登録で有料プランが1回無料！";
+}
+
+export function formatFreeTrialPromoBody(): string {
+  return "プレミアム生成（全文表示・コピーなど）を1回無料でお試しいただけます。まずは無料会員登録からどうぞ。";
+}
+
+export function formatFreeTrialGrantedMessage(): string {
+  return `${FREE_TRIAL_TICKET_LABEL}（初回無料権利）を付与しました。トップページからプレミアム生成を1回お試しいただけます。`;
+}
+
+export const PRO_PLAN_FEATURES = [
+  "お詫びメール全文の表示・コピー",
+  "プレミアム品質の生成結果",
+  "二次炎上防止メモのフル活用",
+  "継続利用時の安定した業務効率化",
+] as const;

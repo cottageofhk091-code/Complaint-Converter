@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useState } from "react";
@@ -80,6 +81,10 @@ function LoginForm() {
       </div>
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 shadow-xl shadow-black/20 sm:p-7">
+        <div className="mb-5">
+          <FreeTrialPromoBanner variant="inline" showCta />
+        </div>
+
         <header className="mb-6 border-b border-slate-700/60 pb-5">
           <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
             会員ログイン

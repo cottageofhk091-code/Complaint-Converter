@@ -10,6 +10,7 @@ import {
   formatProPriceShort,
   formatProUnlockHeadline,
 } from "@/lib/pricing";
+import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
 import { useAuth } from "@/components/AuthProvider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -403,6 +404,12 @@ export default function Home() {
           〜クレーム対応からお詫びメールまで、AIが即座に最適化〜
         </p>
       </header>
+
+      {!isAuthenticated && (
+        <div className="mb-8 animate-fade-up">
+          <FreeTrialPromoBanner variant="hero" showCta />
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}

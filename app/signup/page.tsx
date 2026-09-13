@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { AGE_GROUP_OPTIONS, REGION_OPTIONS } from "@/lib/survey";
 import Link from "next/link";
@@ -50,7 +51,7 @@ export default function SignupPage() {
 
       if (result.needsEmailConfirmation) {
         setInfo(
-          "確認メールを送信しました。メール内のリンクから認証を完了してください。"
+          "確認メールを送信しました。メール内のリンクから認証を完了してください。認証完了後、有料プラン1回無料チケットが付与されます。"
         );
       } else {
         router.push("/mypage");
@@ -91,13 +92,17 @@ export default function SignupPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 shadow-xl shadow-black/20 sm:p-7">
+        <div className="mb-5">
+          <FreeTrialPromoBanner variant="compact" />
+        </div>
+
         <header className="mb-6 border-b border-slate-700/60 pb-5">
           <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
             無料会員登録
           </p>
           <h1 className="text-2xl font-bold text-slate-50">新規会員登録</h1>
           <p className="mt-2 text-sm text-slate-400">
-            無料会員として登録できます。サービス改善のため、年代・地域のアンケートにご協力ください。
+            無料会員として登録できます。今なら有料プラン（プレミアム生成）が1回無料でお試しいただけます。サービス改善のため、年代・地域のアンケートにご協力ください。
           </p>
         </header>
 
