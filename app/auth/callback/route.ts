@@ -1,11 +1,12 @@
+import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * メール確認・マジックリンク等のコールバック。
- * 成功・失敗いずれも歓迎画面 /auth/confirmed へ誘導（赤エラーを出さない）。
+ * メール確認・マジックリンク・パスワード再設定のコールバック。
+ * recovery は /auth/update-password へ。それ以外は歓迎画面へ。
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -23,12 +24,15 @@ export async function GET(request: NextRequest) {
       `${origin}/auth/confirmed?next=${encodeURIComponent(next)}`
     );
 
+  const toUpdatePassword = () =>
+    NextResponse.redirect(`${origin}${PASSWORD_UPDATE_PATH}`);
+
   /** パスワード再設定は歓迎画面ではなく設定画面へ */
   const afterAuthSuccess = (resolvedType: EmailOtpType | null | undefined) => {
     if (resolvedType === "recovery") {
       const dest =
-        nextPath.startsWith("/auth/update-password") || nextPath === "/"
-          ? "/auth/update-password"
+        nextPath.startsWith(PASSWORD_UPDATE_PATH) || nextPath === "/"
+          ? PASSWORD_UPDATE_PATH
           : nextPath;
       return NextResponse.redirect(`${origin}${dest}`);
     }
@@ -63,9 +67,12 @@ export async function GET(request: NextRequest) {
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
-        // code フローでも next が update-password ならそちらへ
-        if (nextPath.startsWith("/auth/update-password")) {
-          return NextResponse.redirect(`${origin}/auth/update-password`);
+        // ConfirmationURL / PKCE: redirectTo に載せた type=recovery を優先
+        if (
+          type === "recovery" ||
+          nextPath.startsWith(PASSWORD_UPDATE_PATH)
+        ) {
+          return toUpdatePassword();
         }
         return welcome(nextPath === "/mypage" ? "/" : nextPath);
       }
@@ -73,16 +80,23 @@ export async function GET(request: NextRequest) {
         "[auth/callback] exchangeCodeForSession failed, welcome anyway:",
         error.message
       );
-      return welcome("/login");
+      return type === "recovery"
+        ? NextResponse.redirect(`${origin}/forgot-password`)
+        : welcome("/login");
     }
 
     const { data } = await supabase.auth.getSession();
     if (data.session) {
+      if (type === "recovery" || nextPath.startsWith(PASSWORD_UPDATE_PATH)) {
+        return toUpdatePassword();
+      }
       return welcome("/");
     }
   } catch (err) {
     console.warn("[auth/callback] unexpected error, welcome redirect:", err);
   }
 
-  return welcome("/login");
+  return type === "recovery"
+    ? NextResponse.redirect(`${origin}/forgot-password`)
+    : welcome("/login");
 }

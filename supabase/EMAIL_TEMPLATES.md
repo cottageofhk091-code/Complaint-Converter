@@ -47,9 +47,21 @@
 ### URL Configuration
 
 - Site URL: 本番ドメイン
-- Redirect URLs:
+- Redirect URLs（Allow list）:
   - `https://あなたのドメイン/auth/callback`
   - `https://あなたのドメイン/auth/update-password`
+
+アプリの `resetPasswordForEmail` は次を `redirectTo` に渡します  
+（`lib/auth-redirects.ts` / `app/forgot-password/page.tsx`）:
+
+```text
+https://あなたのドメイン/auth/callback?type=recovery&next=/auth/update-password
+```
+
+- **件名**: コードからは変更不可。Dashboard の Reset password テンプレ件名を  
+  `【Smartお詫びコンシェルジュ】パスワードの再設定` にしてください。
+- **本文リンク**: 上記 HTML テンプレの Token Hash URL を使用（推奨）。  
+  もし `{{ .ConfirmationURL }}` のままなら、この `redirectTo` 経由で callback に戻ります。
 
 アプリ側の定数正本: `lib/supabase-email-templates.ts`
 

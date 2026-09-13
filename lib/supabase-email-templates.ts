@@ -34,4 +34,10 @@ export const RECOVERY_EMAIL = {
     "{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/auth/update-password",
   ].join("\n"),
   bodyHtmlHintPath: "supabase/templates/reset-password.html",
+  /**
+   * アプリ側 resetPasswordForEmail の redirectTo（ConfirmationURL フォールバック用）。
+   * 実値は origin 付きで lib/auth-redirects.ts が生成する。
+   */
+  redirectToPath:
+    "/auth/callback?type=recovery&next=/auth/update-password",
 } as const;

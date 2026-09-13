@@ -1,6 +1,7 @@
 "use client";
 
 import { toJapaneseAuthError } from "@/lib/auth-errors";
+import { getPasswordRecoveryRedirectTo } from "@/lib/auth-redirects";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
@@ -27,12 +28,14 @@ export default function ForgotPasswordPage() {
 
     setSubmitting(true);
     try {
-      const origin = window.location.origin;
+      // redirectTo は Dashboard の Redirect URLs に /auth/callback を登録すること。
+      // 日本語メール件名・本文は Dashboard の Recovery テンプレ側。
+      // token_hash テンプレでも ConfirmationURL フォールバックでも、
+      // type=recovery 付き callback へ揃える。
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         {
-          // メールテンプレートが Token Hash 方式の場合は callback 経由で update-password へ
-          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent("/auth/update-password")}`,
+          redirectTo: getPasswordRecoveryRedirectTo(window.location.origin),
         }
       );
       if (resetError) throw resetError;

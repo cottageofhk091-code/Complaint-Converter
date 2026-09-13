@@ -31,6 +31,8 @@ enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/callback?type=recovery",
+  "http://localhost:3000/auth/callback?type=recovery&next=/auth/update-password",
   "http://localhost:3000/auth/update-password"
 ]
 enable_signup = true
