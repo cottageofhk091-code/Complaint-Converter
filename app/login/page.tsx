@@ -6,24 +6,32 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const { login, isAuthenticated, user } = useAuth();
+  const { signIn, isAuthenticated, user, supabaseReady, ready } = useAuth();
   const router = useRouter();
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!email.trim()) {
-      setError("メールアドレスを入力してください。");
+    if (!email.trim() || !password) {
+      setError("メールアドレスとパスワードを入力してください。");
       return;
     }
-    login({ name: name.trim() || undefined, email: email.trim() });
-    router.push("/");
+    setSubmitting(true);
+    try {
+      await signIn({ email: email.trim(), password });
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ログインに失敗しました。");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  if (isAuthenticated && user) {
+  if (ready && isAuthenticated && user) {
     return (
       <main className="mx-auto max-w-md px-4 py-14 sm:px-6">
         <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-6 text-center">
@@ -60,25 +68,17 @@ export default function LoginPage() {
           </p>
           <h1 className="text-2xl font-bold text-slate-50">ログイン</h1>
           <p className="mt-2 text-sm text-slate-400">
-            メールアドレスを入力して続行できます。PRO
-            機能は Stripe 決済完了後にのみ利用できます。
+            登録済みのメールアドレスとパスワードでログインできます。
           </p>
         </header>
 
+        {!supabaseReady && (
+          <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            Supabase 環境変数が未設定のため、現在ログインできません。
+          </p>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="mb-2 block text-sm text-slate-200">
-              お名前（任意）
-            </label>
-            <input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-              placeholder="山田 太郎"
-              autoComplete="name"
-            />
-          </div>
           <div>
             <label htmlFor="email" className="mb-2 block text-sm text-slate-200">
               メールアドレス
@@ -94,6 +94,20 @@ export default function LoginPage() {
               autoComplete="email"
             />
           </div>
+          <div>
+            <label htmlFor="password" className="mb-2 block text-sm text-slate-200">
+              パスワード
+            </label>
+            <input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+              autoComplete="current-password"
+            />
+          </div>
 
           {error && (
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
@@ -103,11 +117,26 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500"
+            disabled={submitting || !supabaseReady}
+            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            ログインする
+            {submitting ? "ログイン中…" : "ログインする"}
           </button>
         </form>
+
+        <div className="mt-5 space-y-2 text-center text-xs text-slate-500">
+          <p>
+            アカウントをお持ちでない方は{" "}
+            <Link href="/signup" className="text-blue-400 hover:underline">
+              新規登録
+            </Link>
+          </p>
+          <p>
+            <Link href="/forgot-password" className="text-blue-400 hover:underline">
+              パスワードをお忘れの方
+            </Link>
+          </p>
+        </div>
       </div>
     </main>
   );

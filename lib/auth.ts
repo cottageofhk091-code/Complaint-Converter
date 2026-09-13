@@ -1,56 +1,40 @@
+/**
+ * Supabase Auth 連携用のユーザー型。
+ * plan / membershipType の表示と Stripe PRO（proSessionId）は別系統。
+ */
+export type MembershipType = "free" | "paid";
+
 export type AuthUser = {
   id: string;
   name: string;
   email: string;
+  /** 表示用。PRO 実権は Checkout Session 検証が正本 */
   plan: "free" | "pro";
+  membershipType: MembershipType;
+  ageGroup?: string | null;
+  region?: string | null;
 };
 
-export const AUTH_STORAGE_KEY = "smart_owabi_auth_user";
+export type ProfileRow = {
+  id: string;
+  app_name: string;
+  email: string | null;
+  display_name: string | null;
+  age_group: string;
+  region: string;
+  membership_type: MembershipType;
+  created_at?: string;
+  updated_at?: string;
+};
 
-export function loadUserFromStorage(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AuthUser;
-    if (!parsed?.email || !parsed?.id) return null;
-    return {
-      id: parsed.id,
-      name: parsed.name || "ユーザー",
-      email: parsed.email,
-      // plan は表示用。PRO 実権は Checkout Session 検証が正本。
-      plan: parsed.plan === "pro" ? "pro" : "free",
-    };
-  } catch {
-    return null;
-  }
-}
+/** localStorage の旧デモ認証キー（移行時に掃除） */
+export const LEGACY_AUTH_STORAGE_KEY = "smart_owabi_auth_user";
 
-export function saveUserToStorage(user: AuthUser | null): void {
+export function clearLegacyAuthStorage(): void {
   if (typeof window === "undefined") return;
   try {
-    if (user) {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-    }
+    localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
   } catch {
     // ignore
   }
-}
-
-/** メールログイン用ユーザー作成（常に free。PRO は決済検証後に付与） */
-export function createUser(partial?: {
-  name?: string;
-  email?: string;
-}): AuthUser {
-  const email = partial?.email?.trim() || "user@example.com";
-  const name = partial?.name?.trim() || "ユーザー";
-
-  return {
-    id: `user_${Date.now().toString(36)}`,
-    name,
-    email,
-    plan: "free",
-  };
 }

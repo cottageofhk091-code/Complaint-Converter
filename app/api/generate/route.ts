@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // タイムアウトを60秒に延長
 
 type FaultLevel =
   | "clear_fault"
@@ -29,6 +30,8 @@ interface GenerateRequest {
   tone: Tone;
   /** 検証済み Stripe Checkout Session ID（PRO 全文返却に必須） */
   checkoutSessionId?: string;
+  /** ログイン済みかどうか（ログ用。Paywall 判定には使わない） */
+  isRegistered?: boolean;
 }
 
 interface GenerateResult {
@@ -381,21 +384,22 @@ export async function POST(req: NextRequest) {
         console.error("GA4 send error:", gaError);
       }
 
-      try {
-        if (supabase) {
-          const { error: dbError } = await supabase.from("app_logs").insert([
+      if (supabase) {
+        void Promise.resolve(
+          supabase.from("app_logs").insert([
             {
               app_name: "apology",
-              user_type: "unregistered", // ログイン機能実装前は一律 'unregistered'
+              user_type: body.isRegistered ? "registered" : "unregistered",
               action_type: "generate_apology",
             },
-          ]);
-          if (dbError) {
+          ])
+        )
+          .then(({ error }) => {
+            if (error) console.error("Supabase log error:", error);
+          })
+          .catch((dbError: unknown) => {
             console.error("Supabase log error:", dbError);
-          }
-        }
-      } catch (dbError) {
-        console.error("Supabase log error:", dbError);
+          });
       }
 
       return NextResponse.json(payload);

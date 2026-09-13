@@ -201,7 +201,7 @@ function CopyButton({
 }
 
 export default function Home() {
-  const { user, isProUnlocked, proSessionId, activateProFromCheckout } =
+  const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout } =
     useAuth();
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
@@ -349,6 +349,7 @@ export default function Home() {
           responsePolicy,
           tone,
           checkoutSessionId: proSessionId || undefined,
+          isRegistered: isAuthenticated,
         }),
       });
 

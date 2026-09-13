@@ -1,15 +1,20 @@
 "use client";
 
+import type { AuthUser } from "@/lib/auth";
+import { clearLegacyAuthStorage } from "@/lib/auth";
 import {
-  AuthUser,
-  createUser,
-  loadUserFromStorage,
-  saveUserToStorage,
-} from "@/lib/auth";
+  fetchProfile,
+  markProfilePaid,
+  profileToAuthUser,
+  upsertProfileForUser,
+  type SurveyInput,
+} from "@/lib/profiles";
 import {
   getProSessionIdFromStorage,
   setProSessionIdInStorage,
 } from "@/lib/pro";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import type { Session, User } from "@supabase/supabase-js";
 import {
   createContext,
   useCallback,
@@ -21,21 +26,28 @@ import {
 
 type AuthContextValue = {
   user: AuthUser | null;
+  session: Session | null;
   isAuthenticated: boolean;
-  /** サーバー検証済みの Checkout Session を保持しているか */
   isProUnlocked: boolean;
-  /** PRO 全文取得に送る Session ID */
   proSessionId: string | null;
   ready: boolean;
-  login: (input: { name?: string; email: string }) => void;
+  supabaseReady: boolean;
+  signUp: (input: {
+    email: string;
+    password: string;
+    displayName?: string;
+    ageGroup: string;
+    region: string;
+  }) => Promise<{ needsEmailConfirmation: boolean }>;
+  signIn: (input: { email: string; password: string }) => Promise<void>;
+  signOut: () => Promise<void>;
   logout: () => void;
-  /** 決済検証成功後に Session ID を保存し PRO 表示にする */
   activateProFromCheckout: (input: {
     sessionId: string;
     email?: string | null;
   }) => void;
-  /** PRO セッションを破棄（ロック） */
   clearProAccess: () => void;
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -46,132 +58,274 @@ function notifyProChanged() {
   }
 }
 
+function displayNameFromUser(user: User): string {
+  const meta = user.user_metadata as Record<string, unknown> | undefined;
+  const fromMeta =
+    (typeof meta?.display_name === "string" && meta.display_name) ||
+    (typeof meta?.name === "string" && meta.name) ||
+    "";
+  return fromMeta.trim() || user.email?.split("@")[0] || "ユーザー";
+}
+
+async function verifyProSession(
+  sessionId: string,
+  email?: string | null
+): Promise<{ unlocked: boolean; sessionId: string | null }> {
+  try {
+    const res = await fetch("/api/stripe/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        email: email || undefined,
+      }),
+    });
+    const data = (await res.json()) as {
+      unlocked?: boolean;
+      sessionId?: string | null;
+    };
+    return {
+      unlocked: !!data.unlocked,
+      sessionId: data.sessionId || (data.unlocked ? sessionId : null),
+    };
+  } catch (err) {
+    console.error("[auth] pro verify failed:", err);
+    return { unlocked: false, sessionId: null };
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [proSessionId, setProSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const supabaseReady = isSupabaseConfigured();
 
-  useEffect(() => {
-    let cancelled = false;
+  const syncFromSession = useCallback(async (nextSession: Session | null) => {
+    setSession(nextSession);
 
-    async function hydrate() {
-      const storedUser = loadUserFromStorage();
-      const storedSessionId = getProSessionIdFromStorage();
+    const storedProId = getProSessionIdFromStorage();
+    let activeProId: string | null = null;
 
-      if (!storedUser) {
+    if (storedProId) {
+      const verified = await verifyProSession(
+        storedProId,
+        nextSession?.user?.email
+      );
+      if (verified.unlocked && (verified.sessionId || storedProId)) {
+        activeProId = verified.sessionId || storedProId;
+        setProSessionIdInStorage(activeProId);
+      } else {
         setProSessionIdInStorage(null);
-        if (!cancelled) {
-          setUser(null);
-          setProSessionId(null);
-          setReady(true);
-        }
-        return;
       }
-
-      if (!storedSessionId) {
-        const freeUser =
-          storedUser.plan === "pro"
-            ? { ...storedUser, plan: "free" as const }
-            : storedUser;
-        if (freeUser.plan !== storedUser.plan) {
-          saveUserToStorage(freeUser);
-        }
-        if (!cancelled) {
-          setUser(freeUser);
-          setProSessionId(null);
-          setReady(true);
-        }
-        return;
-      }
-
-      // 起動時に Session を再検証（偽の localStorage だけでは PRO にしない）
-      try {
-        const res = await fetch("/api/stripe/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: storedSessionId,
-            email: storedUser.email || undefined,
-          }),
-        });
-        const data = (await res.json()) as {
-          unlocked?: boolean;
-          sessionId?: string | null;
-          email?: string | null;
-        };
-
-        if (cancelled) return;
-
-        if (data.unlocked && (data.sessionId || storedSessionId)) {
-          const sid = data.sessionId || storedSessionId;
-          setProSessionIdInStorage(sid);
-          const nextUser: AuthUser = {
-            ...storedUser,
-            plan: "pro",
-            email: data.email || storedUser.email,
-          };
-          saveUserToStorage(nextUser);
-          setUser(nextUser);
-          setProSessionId(sid);
-        } else {
-          setProSessionIdInStorage(null);
-          const freeUser = { ...storedUser, plan: "free" as const };
-          saveUserToStorage(freeUser);
-          setUser(freeUser);
-          setProSessionId(null);
-        }
-      } catch (err) {
-        console.error("[auth] pro session re-verify failed:", err);
-        if (!cancelled) {
-          // 検証失敗時は fail-closed（ロック）
-          setProSessionIdInStorage(null);
-          const freeUser = { ...storedUser, plan: "free" as const };
-          saveUserToStorage(freeUser);
-          setUser(freeUser);
-          setProSessionId(null);
-        }
-      } finally {
-        if (!cancelled) setReady(true);
-      }
+    } else {
+      setProSessionIdInStorage(null);
     }
 
-    void hydrate();
+    setProSessionId(activeProId);
+
+    if (!nextSession?.user) {
+      setUser(null);
+      return;
+    }
+
+    const profile = await fetchProfile(nextSession.user.id);
+    setUser(
+      profileToAuthUser(
+        profile,
+        {
+          id: nextSession.user.id,
+          email: nextSession.user.email || "",
+          name: displayNameFromUser(nextSession.user),
+        },
+        Boolean(activeProId)
+      )
+    );
+
+    if (activeProId && profile?.membership_type !== "paid") {
+      void markProfilePaid(nextSession.user.id);
+    }
+  }, []);
+
+  useEffect(() => {
+    clearLegacyAuthStorage();
+    let cancelled = false;
+
+    async function init() {
+      if (!supabase) {
+        const storedProId = getProSessionIdFromStorage();
+        if (storedProId) {
+          const verified = await verifyProSession(storedProId);
+          if (!cancelled) {
+            if (verified.unlocked) {
+              const sid = verified.sessionId || storedProId;
+              setProSessionIdInStorage(sid);
+              setProSessionId(sid);
+            } else {
+              setProSessionIdInStorage(null);
+              setProSessionId(null);
+            }
+          }
+        }
+        if (!cancelled) setReady(true);
+        return;
+      }
+
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      await syncFromSession(data.session);
+      if (!cancelled) setReady(true);
+    }
+
+    void init();
+
+    if (!supabase) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void syncFromSession(nextSession);
+    });
+
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [syncFromSession]);
 
-  const persistUser = useCallback((next: AuthUser | null) => {
-    setUser(next);
-    saveUserToStorage(next);
-  }, []);
+  const signUp = useCallback(
+    async (input: {
+      email: string;
+      password: string;
+      displayName?: string;
+      ageGroup: string;
+      region: string;
+    }) => {
+      if (!supabase) {
+        throw new Error(
+          "Supabase が未設定です。環境変数を設定してから登録してください。"
+        );
+      }
 
-  const login = useCallback(
-    (input: { name?: string; email: string }) => {
-      const next = createUser({
-        name: input.name,
-        email: input.email,
+      const email = input.email.trim().toLowerCase();
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+
+      const survey: SurveyInput = {
+        displayName: input.displayName,
+        ageGroup: input.ageGroup,
+        region: input.region,
+        membershipType: "free",
+      };
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: input.password,
+        options: {
+          emailRedirectTo: `${origin}/auth/callback`,
+          data: {
+            display_name: input.displayName?.trim() || "",
+            age_group: input.ageGroup,
+            region: input.region,
+            app_name: "apology",
+          },
+        },
       });
-      // ログインだけでは PRO にしない。既存の検証済み Session があれば維持。
-      const existingSession = getProSessionIdFromStorage();
-      persistUser(
-        existingSession ? { ...next, plan: "pro" } : next
-      );
-      setProSessionId(existingSession);
-      notifyProChanged();
+
+      if (error) throw new Error(error.message);
+
+      if (data.user && data.session) {
+        await upsertProfileForUser(data.user.id, email, survey);
+        await syncFromSession(data.session);
+        return { needsEmailConfirmation: false };
+      }
+
+      if (data.user && !data.session) {
+        try {
+          await upsertProfileForUser(data.user.id, email, survey);
+        } catch (err) {
+          console.warn("[auth] profile upsert before confirm skipped:", err);
+        }
+        return { needsEmailConfirmation: true };
+      }
+
+      return { needsEmailConfirmation: !data.session };
     },
-    [persistUser]
+    [syncFromSession]
   );
+
+  const signIn = useCallback(
+    async (input: { email: string; password: string }) => {
+      if (!supabase) {
+        throw new Error(
+          "Supabase が未設定です。環境変数を設定してからログインしてください。"
+        );
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: input.email.trim().toLowerCase(),
+        password: input.password,
+      });
+
+      if (error) throw new Error(error.message);
+
+      if (data.user) {
+        const existing = await fetchProfile(data.user.id);
+        if (!existing) {
+          const meta = data.user.user_metadata as Record<string, unknown>;
+          const ageGroup =
+            typeof meta.age_group === "string" ? meta.age_group : "";
+          const region = typeof meta.region === "string" ? meta.region : "";
+          if (ageGroup && region) {
+            try {
+              await upsertProfileForUser(
+                data.user.id,
+                data.user.email || input.email,
+                {
+                  displayName:
+                    typeof meta.display_name === "string"
+                      ? meta.display_name
+                      : undefined,
+                  ageGroup,
+                  region,
+                  membershipType: "free",
+                }
+              );
+            } catch (err) {
+              console.warn("[auth] profile backfill failed:", err);
+            }
+          }
+        }
+      }
+
+      await syncFromSession(data.session);
+    },
+    [syncFromSession]
+  );
+
+  const signOut = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setSession(null);
+    notifyProChanged();
+  }, []);
+
+  const logout = useCallback(() => {
+    void signOut();
+  }, [signOut]);
 
   const clearProAccess = useCallback(() => {
     setProSessionIdInStorage(null);
     setProSessionId(null);
-    setUser((prev) => {
-      if (!prev) return prev;
-      const next = { ...prev, plan: "free" as const };
-      saveUserToStorage(next);
-      return next;
-    });
+    setUser((prev) =>
+      prev ? { ...prev, plan: "free", membershipType: "free" } : prev
+    );
     notifyProChanged();
   }, []);
 
@@ -182,52 +336,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProSessionIdInStorage(sid);
       setProSessionId(sid);
       setUser((prev) => {
-        const base =
-          prev ??
-          createUser({
-            email: input.email || undefined,
-            name: "PROユーザー",
-          });
-        const next: AuthUser = {
-          ...base,
+        if (!prev) return prev;
+        return {
+          ...prev,
           plan: "pro",
-          email: input.email?.trim() || base.email,
+          membershipType: "paid",
+          email: input.email?.trim() || prev.email,
         };
-        saveUserToStorage(next);
-        return next;
       });
+      if (session?.user?.id) {
+        void markProfilePaid(session.user.id);
+      }
       notifyProChanged();
     },
-    []
+    [session?.user?.id]
   );
 
-  const logout = useCallback(() => {
-    persistUser(null);
-    setProSessionIdInStorage(null);
-    setProSessionId(null);
-    notifyProChanged();
-  }, [persistUser]);
+  const refreshProfile = useCallback(async () => {
+    await syncFromSession(session);
+  }, [session, syncFromSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      isAuthenticated: !!user,
+      session,
+      isAuthenticated: !!session?.user,
       isProUnlocked: Boolean(proSessionId),
       proSessionId,
       ready,
-      login,
+      supabaseReady,
+      signUp,
+      signIn,
+      signOut,
       logout,
       activateProFromCheckout,
       clearProAccess,
+      refreshProfile,
     }),
     [
       user,
+      session,
       proSessionId,
       ready,
-      login,
+      supabaseReady,
+      signUp,
+      signIn,
+      signOut,
       logout,
       activateProFromCheckout,
       clearProAccess,
+      refreshProfile,
     ]
   );
 
