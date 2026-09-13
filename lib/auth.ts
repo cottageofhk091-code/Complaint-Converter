@@ -1,6 +1,7 @@
 /**
  * Supabase Auth 連携用のユーザー型。
  * plan / membershipType の表示と Stripe PRO（proSessionId）は別系統。
+ * freeTrialCredits は profiles 上の初回無料権。
  */
 export type MembershipType = "free" | "paid";
 
@@ -13,6 +14,10 @@ export type AuthUser = {
   membershipType: MembershipType;
   ageGroup?: string | null;
   region?: string | null;
+  /** 有料プラン相当の無料体験の残り回数 */
+  freeTrialCredits: number;
+  /** 初回無料権を消費済みか */
+  freeTrialUsed: boolean;
 };
 
 export type ProfileRow = {
@@ -23,6 +28,8 @@ export type ProfileRow = {
   age_group: string;
   region: string;
   membership_type: MembershipType;
+  free_trial_credits?: number | null;
+  free_trial_used?: boolean | null;
   created_at?: string;
   updated_at?: string;
 };

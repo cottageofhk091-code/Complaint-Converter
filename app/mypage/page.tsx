@@ -62,6 +62,18 @@ export default function MyPage() {
             </dd>
           </div>
           <div>
+            <dt className="text-slate-500">初回無料体験</dt>
+            <dd className="mt-1 font-medium text-slate-100">
+              {isProUnlocked || user.membershipType === "paid"
+                ? "PRO利用中（無料枠不要）"
+                : (user.freeTrialCredits ?? 0) > 0
+                  ? `残り ${user.freeTrialCredits} 回`
+                  : user.freeTrialUsed
+                    ? "利用済み"
+                    : "未付与"}
+            </dd>
+          </div>
+          <div>
             <dt className="text-slate-500">年代</dt>
             <dd className="mt-1 font-medium text-slate-100">
               {user.ageGroup ? ageGroupLabel(user.ageGroup) : "未設定"}

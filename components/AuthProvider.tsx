@@ -233,6 +233,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             age_group: input.ageGroup,
             region: input.region,
             app_name: "apology",
+            free_trial_credits: 1,
+            free_trial_used: false,
           },
         },
       });

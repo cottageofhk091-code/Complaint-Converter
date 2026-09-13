@@ -11,6 +11,7 @@ import {
   formatProUnlockHeadline,
 } from "@/lib/pricing";
 import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
+import PricingModal from "@/components/PricingModal";
 import { useAuth } from "@/components/AuthProvider";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -202,8 +203,8 @@ function CopyButton({
 }
 
 export default function Home() {
-  const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout } =
-    useAuth();
+  const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout , refreshProfile} = useAuth();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
   const [responsePolicy, setResponsePolicy] =
@@ -359,6 +360,17 @@ export default function Home() {
         throw new Error(data.error || "生成に失敗しました。");
       }
       setResult(data as GenerateResult);
+      if (data.usedFreeTrial) {
+        await refreshProfile();
+      }
+      if (
+        data.paywalled &&
+        isAuthenticated &&
+        !isProUnlocked &&
+        !((user?.freeTrialCredits ?? 0) > 0)
+      ) {
+        setUpgradeOpen(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "予期しないエラーです。");
     } finally {
@@ -410,6 +422,17 @@ export default function Home() {
           <FreeTrialPromoBanner variant="hero" showCta />
         </div>
       )}
+
+      {isAuthenticated &&
+        !isProUnlocked &&
+        (user?.freeTrialCredits ?? 0) > 0 && (
+          <div className="mb-6 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <span className="font-semibold text-emerald-300">初回無料体験適用中</span>
+            <span className="mt-0.5 block text-emerald-100/85">
+              プレミアム生成（全文表示）があと {user?.freeTrialCredits} 回まで無料です。
+            </span>
+          </div>
+        )}
 
       <form
         onSubmit={handleSubmit}
@@ -647,7 +670,17 @@ export default function Home() {
                   </p>
                   <button
                     type="button"
-                    onClick={handleUnlockClick}
+                    onClick={() => {
+                      if (
+                        isAuthenticated &&
+                        !isProUnlocked &&
+                        (user?.freeTrialCredits ?? 0) <= 0
+                      ) {
+                        setUpgradeOpen(true);
+                        return;
+                      }
+                      void handleUnlockClick();
+                    }}
                     disabled={checkoutLoading}
                     className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -688,6 +721,7 @@ export default function Home() {
           </p>
         </section>
       )}
+          <PricingModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
     </main>
   );
 }

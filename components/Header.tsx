@@ -9,6 +9,15 @@ export default function Header() {
   const { user, isAuthenticated, isProUnlocked, ready, logout } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
 
+  const freeTrialLeft =
+    isAuthenticated &&
+    user &&
+    !isProUnlocked &&
+    user.membershipType !== "paid" &&
+    (user.freeTrialCredits ?? 0) > 0
+      ? user.freeTrialCredits
+      : 0;
+
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur">
@@ -30,6 +39,12 @@ export default function Header() {
             >
               有料プランについて
             </button>
+
+            {freeTrialLeft > 0 && (
+              <span className="hidden rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 sm:inline-flex">
+                初回無料体験：残り{freeTrialLeft}回
+              </span>
+            )}
 
             {!ready ? (
               <span className="h-8 w-28 animate-pulse rounded-lg bg-slate-800/80" />

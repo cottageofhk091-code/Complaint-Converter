@@ -1,4 +1,5 @@
 import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
+import { ensureFreeTrialGranted } from "@/lib/profiles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import type { EmailOtpType } from "@supabase/supabase-js";
@@ -53,6 +54,15 @@ export async function GET(request: NextRequest) {
         token_hash: tokenHash,
       });
       if (!error) {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData.user) {
+            await ensureFreeTrialGranted(userData.user.id, supabase);
+          }
+        } catch (grantErr) {
+          console.warn("[auth/callback] free trial grant skipped:", grantErr);
+        }
+
         return afterAuthSuccess(type);
       }
       console.warn(
@@ -67,6 +77,15 @@ export async function GET(request: NextRequest) {
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData.user) {
+            await ensureFreeTrialGranted(userData.user.id, supabase);
+          }
+        } catch (grantErr) {
+          console.warn("[auth/callback] free trial grant skipped:", grantErr);
+        }
+
         // ConfirmationURL / PKCE: redirectTo に載せた type=recovery を優先
         if (
           type === "recovery" ||

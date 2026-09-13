@@ -2,6 +2,11 @@ import { GoogleGenAI } from "@google/genai";
 import { sendGA4Event } from "@/lib/ga4-mp";
 import { resolveProAccess } from "@/lib/pro-access";
 import { createSupabaseAnonClient } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  consumeFreeTrialCredit,
+  fetchProfile,
+} from "@/lib/profiles";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -43,6 +48,8 @@ interface GenerateResult {
   freePreview: string;
   isPro: boolean;
   paywalled: boolean;
+  usedFreeTrial?: boolean;
+  freeTrialCreditsRemaining?: number;
 }
 
 const FAULT_LABELS: Record<FaultLevel, string> = {
@@ -354,6 +361,30 @@ export async function POST(req: NextRequest) {
       kvOnly: true,
     });
 
+    let entitledByMembership = false;
+    let shouldConsumeFreeTrial = false;
+    let freeTrialCreditsRemaining = 0;
+
+    if (!access.entitled) {
+      try {
+        const supabaseAuth = await createSupabaseServerClient();
+        const {
+          data: { user: authUser },
+        } = await supabaseAuth.auth.getUser();
+        if (authUser) {
+          const profile = await fetchProfile(authUser.id, supabaseAuth);
+          if (profile?.membership_type === "paid") {
+            entitledByMembership = true;
+          } else if ((profile?.free_trial_credits ?? 0) > 0) {
+            shouldConsumeFreeTrial = true;
+            freeTrialCreditsRemaining = profile?.free_trial_credits ?? 0;
+          }
+        }
+      } catch (trialErr) {
+        console.warn("[/api/generate] free trial check skipped:", trialErr);
+      }
+    }
+
     const ai = new GoogleGenAI({ apiKey });
 
     let text: string;
@@ -374,7 +405,28 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = extractJson(text);
-      const payload = applyPaywall(result, access.entitled);
+      // 無料権の消費は生成成功後のみ。Stripe PRO / paid は消費しない。
+      let usedFreeTrial = false;
+      let unlockFull = Boolean(access.entitled || entitledByMembership);
+
+      if (!unlockFull && shouldConsumeFreeTrial) {
+        try {
+          const supabaseAuth = await createSupabaseServerClient();
+          const consumed = await consumeFreeTrialCredit(supabaseAuth);
+          usedFreeTrial = consumed.success;
+          freeTrialCreditsRemaining = consumed.freeTrialCredits;
+          unlockFull = consumed.success;
+        } catch (consumeErr) {
+          console.warn("[/api/generate] free trial consume error:", consumeErr);
+          unlockFull = false;
+        }
+      }
+
+      const payload = {
+        ...applyPaywall(result, unlockFull),
+        usedFreeTrial,
+        freeTrialCreditsRemaining,
+      };
 
       try {
         await sendGA4Event("apology_generated", {
