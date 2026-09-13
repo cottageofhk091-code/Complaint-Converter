@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
@@ -15,6 +15,12 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (emailConfirmed) {
+      router.replace("/auth/confirmed?next=/login");
+    }
+  }, [emailConfirmed, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,6 +38,14 @@ function LoginForm() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (emailConfirmed) {
+    return (
+      <main className="mx-auto max-w-md px-4 py-14">
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-800/60" />
+      </main>
+    );
   }
 
   if (ready && isAuthenticated && user) {
@@ -74,12 +88,6 @@ function LoginForm() {
             登録済みのメールアドレスとパスワードでログインできます。
           </p>
         </header>
-
-        {emailConfirmed && (
-          <p className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-            メールアドレスの確認が完了しました。ログインしてください。
-          </p>
-        )}
 
         {!supabaseReady && (
           <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
