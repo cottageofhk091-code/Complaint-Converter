@@ -114,7 +114,7 @@ export async function ensureFreeTrialGranted(
   const db = client ?? supabase;
   if (!db) return null;
 
-  let profile = await fetchProfile(userId, db);
+  const profile = await fetchProfile(userId, db);
 
   if (!profile) {
     const {

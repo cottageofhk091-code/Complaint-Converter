@@ -18,7 +18,7 @@ export async function sendGA4Event(
     (typeof params.clientId === "string" && params.clientId) ||
     `server.${Date.now()}.${Math.random().toString(36).substring(2, 9)}`;
 
-  const { clientId: _omitClientId, ...eventParams } = params;
+  const { clientId: _, ...eventParams } = params;
 
   const payload = {
     client_id: clientId,
