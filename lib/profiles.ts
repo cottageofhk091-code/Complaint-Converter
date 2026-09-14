@@ -1,5 +1,4 @@
 import type { AuthUser, MembershipType, ProfileRow } from "@/lib/auth";
-import { toJapaneseAuthError } from "@/lib/auth-errors";
 import type { AgeGroup, Region } from "@/lib/survey";
 import { getSupabaseOrThrow, supabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -21,67 +20,178 @@ function normalizeCredits(value: number | null | undefined): number {
   return Math.floor(value);
 }
 
+type PostgrestLikeError = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
+
+function logProfileError(
+  context: string,
+  error: PostgrestLikeError,
+  extra?: unknown
+) {
+  console.error(`[profiles] ${context}:`, {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+    ...(extra !== undefined ? { extra } : {}),
+  });
+}
+
 /**
  * プロファイルを作成または更新。
  * 新規作成時のみ free_trial_credits = 1 を付与（既存の残回数は上書きしない）。
+ * free_trial_* / age_group / region 等が未マイグレーションでも Auth 登録を止めないよう
+ * 段階フォールバックし、失敗時は null を返す（throw しない）。
  */
 export async function upsertProfileForUser(
   userId: string,
   email: string,
-  survey: SurveyInput
-): Promise<ProfileRow> {
-  const client = getSupabaseOrThrow();
-  const now = new Date().toISOString();
-  const existing = await fetchProfile(userId);
+  survey: SurveyInput,
+  client?: SupabaseClient
+): Promise<ProfileRow | null> {
+  let db: SupabaseClient;
+  try {
+    db = client ?? getSupabaseOrThrow();
+  } catch (err) {
+    console.error("[profiles] supabase client unavailable:", err);
+    return null;
+  }
 
-  if (existing) {
-    const { data, error } = await client
-      .from("profiles")
-      .update({
+  const now = new Date().toISOString();
+  const normalizedEmail = email.trim().toLowerCase();
+  const displayName = survey.displayName?.trim() || null;
+  const membershipType = survey.membershipType ?? "free";
+
+  try {
+    const existing = await fetchProfile(userId, db);
+
+    if (existing) {
+      const updateCandidates: Record<string, unknown>[] = [
+        {
+          app_name: APP_NAME,
+          email: normalizedEmail,
+          display_name: displayName || existing.display_name,
+          age_group: survey.ageGroup,
+          region: survey.region,
+          membership_type: membershipType ?? existing.membership_type,
+          updated_at: now,
+        },
+        {
+          app_name: APP_NAME,
+          email: normalizedEmail,
+          display_name: displayName || existing.display_name,
+          membership_type: membershipType ?? existing.membership_type,
+          updated_at: now,
+        },
+        {
+          email: normalizedEmail,
+          display_name: displayName || existing.display_name,
+          updated_at: now,
+        },
+      ];
+
+      for (let i = 0; i < updateCandidates.length; i++) {
+        const payload = updateCandidates[i];
+        const { data, error } = await db
+          .from("profiles")
+          .update(payload)
+          .eq("id", userId)
+          .select()
+          .maybeSingle();
+
+        if (!error) {
+          return (data as ProfileRow) || existing;
+        }
+        logProfileError(`update attempt ${i + 1} failed`, error, payload);
+      }
+
+      console.warn(
+        "[profiles] update fallbacks exhausted; returning existing profile"
+      );
+      return existing;
+    }
+
+    const insertCandidates: Record<string, unknown>[] = [
+      {
+        id: userId,
         app_name: APP_NAME,
-        email: email.trim().toLowerCase(),
-        display_name: survey.displayName?.trim() || existing.display_name,
+        email: normalizedEmail,
+        display_name: displayName,
         age_group: survey.ageGroup,
         region: survey.region,
-        membership_type: survey.membershipType ?? existing.membership_type,
+        membership_type: membershipType,
+        free_trial_credits: INITIAL_FREE_TRIAL_CREDITS,
+        free_trial_used: false,
         updated_at: now,
-      })
-      .eq("id", userId)
-      .select()
-      .single();
+      },
+      // free_trial_* 未マイグレーション向け
+      {
+        id: userId,
+        app_name: APP_NAME,
+        email: normalizedEmail,
+        display_name: displayName,
+        age_group: survey.ageGroup,
+        region: survey.region,
+        membership_type: membershipType,
+        updated_at: now,
+      },
+      // age_group / region 列が無い・制約不一致向け
+      {
+        id: userId,
+        app_name: APP_NAME,
+        email: normalizedEmail,
+        display_name: displayName,
+        membership_type: membershipType,
+        updated_at: now,
+      },
+      // 最小限
+      {
+        id: userId,
+        app_name: APP_NAME,
+        email: normalizedEmail,
+        updated_at: now,
+      },
+    ];
 
-    if (error) {
-      throw new Error(
-        toJapaneseAuthError(error.message || "プロファイルの保存に失敗しました。")
-      );
+    for (let i = 0; i < insertCandidates.length; i++) {
+      const row = insertCandidates[i];
+      const { data, error } = await db
+        .from("profiles")
+        .insert(row)
+        .select()
+        .maybeSingle();
+
+      if (!error) {
+        return data as ProfileRow;
+      }
+
+      logProfileError(`insert attempt ${i + 1} failed`, error, row);
+
+      if (
+        error.code === "23505" ||
+        /duplicate key|already exists/i.test(error.message || "")
+      ) {
+        const again = await fetchProfile(userId, db);
+        if (again) return again;
+      }
     }
-    return data as ProfileRow;
-  }
 
-  const row = {
-    id: userId,
-    app_name: APP_NAME,
-    email: email.trim().toLowerCase(),
-    display_name: survey.displayName?.trim() || null,
-    age_group: survey.ageGroup,
-    region: survey.region,
-    membership_type: survey.membershipType ?? "free",
-    free_trial_credits: INITIAL_FREE_TRIAL_CREDITS,
-    free_trial_used: false,
-    updated_at: now,
-  };
-
-  const { data, error } = await client.from("profiles").insert(row).select().single();
-
-  if (error) {
-    const again = await fetchProfile(userId);
+    const again = await fetchProfile(userId, db);
     if (again) return again;
-    throw new Error(
-      toJapaneseAuthError(error.message || "プロファイルの保存に失敗しました。")
-    );
-  }
 
-  return data as ProfileRow;
+    console.error(
+      "[profiles] all insert fallbacks failed; Auth user may exist without profile",
+      { userId, email: normalizedEmail }
+    );
+    return null;
+  } catch (err) {
+    console.error("[profiles] upsertProfileForUser unexpected error:", err);
+    return null;
+  }
 }
 
 export async function fetchProfile(
@@ -146,8 +256,23 @@ export async function ensureFreeTrialGranted(
       .maybeSingle();
 
     if (error) {
-      console.warn("[profiles] create on auth failed:", error.message);
-      return null;
+      console.error("[profiles] create on auth failed:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      });
+      return await upsertProfileForUser(
+        userId,
+        email || "",
+        {
+          displayName: displayName || undefined,
+          ageGroup,
+          region,
+          membershipType: "free",
+        },
+        db
+      );
     }
     return data as ProfileRow;
   }
@@ -171,7 +296,12 @@ export async function ensureFreeTrialGranted(
     .maybeSingle();
 
   if (error) {
-    console.warn("[profiles] ensure free trial failed:", error.message);
+    console.error("[profiles] ensure free trial failed:", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
     return profile;
   }
 

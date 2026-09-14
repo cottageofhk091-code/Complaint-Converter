@@ -9,6 +9,9 @@ const EXACT_MAP: Record<string, string> = {
   "Email not confirmed":
     "メールアドレスの確認が完了していません。届いたメールをご確認ください。",
   "User already registered": "このメールアドレスは既に登録されています。",
+  "A user with this email address has already been registered":
+    "このメールアドレスは既に登録されています。",
+  user_already_exists: "このメールアドレスは既に登録されています。",
   "Password should be at least 6 characters":
     "パスワードは6文字以上で入力してください。",
   "Password should be at least 8 characters":
@@ -39,7 +42,7 @@ const EXACT_MAP: Record<string, string> = {
     "ログインセッションが見つかりません。もう一度ログインしてください。",
   "OTP has expired or is invalid":
     "認証コードが無効か、有効期限が切れています。",
-  "over_email_send_rate_limit":
+  over_email_send_rate_limit:
     "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
 };
 
@@ -54,7 +57,7 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
       "メールアドレスの確認が完了していません。届いたメールをご確認ください。",
   },
   {
-    test: /already (been )?registered|user already exists|already exists/i,
+    test: /already (been )?registered|user already exists|already exists|user_already_exists|email address has already been/i,
     message: "このメールアドレスは既に登録されています。",
   },
   {
@@ -94,10 +97,25 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
 const FALLBACK =
   "エラーが発生しました。時間をおいて再度お試しください。";
 
+const DUPLICATE_MESSAGE = "このメールアドレスは既に登録されています。";
+
 /**
  * Supabase Auth / 一般 Error を画面表示用の日本語に変換する。
  */
 export function toJapaneseAuthError(error: unknown): string {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "").trim()
+      : "";
+
+  if (
+    code === "user_already_exists" ||
+    code === "email_exists" ||
+    /already.?registered|already.?exists/i.test(code)
+  ) {
+    return DUPLICATE_MESSAGE;
+  }
+
   const raw =
     typeof error === "string"
       ? error
@@ -114,10 +132,14 @@ export function toJapaneseAuthError(error: unknown): string {
   }
 
   if (EXACT_MAP[message]) return EXACT_MAP[message];
+  if (code && EXACT_MAP[code]) return EXACT_MAP[code];
 
   for (const rule of PARTIAL_RULES) {
-    if (rule.test.test(message)) return rule.message;
+    if (rule.test.test(message) || (code && rule.test.test(code))) {
+      return rule.message;
+    }
   }
 
+  console.error("[auth-errors] unmapped error:", { message, code, error });
   return FALLBACK;
 }

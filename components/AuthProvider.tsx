@@ -239,20 +239,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) throw new Error(toJapaneseAuthError(error));
+      if (error) {
+        console.error("[auth] signUp failed:", {
+          message: error.message,
+          status: error.status,
+          code: (error as { code?: string }).code,
+          name: error.name,
+        });
+        throw new Error(toJapaneseAuthError(error));
+      }
+
+      // Supabase: 既存ユーザーへの再登録は error 無しで identities 空配列を返すことがある
+      if (
+        data.user &&
+        Array.isArray(data.user.identities) &&
+        data.user.identities.length === 0
+      ) {
+        console.error(
+          "[auth] signUp duplicate detected (empty identities):",
+          { userId: data.user.id, email }
+        );
+        throw new Error("このメールアドレスは既に登録されています。");
+      }
+
+      // プロファイル作成失敗でも Auth 登録自体は成功扱い（無料枠は callback で再試行）
+      if (data.user) {
+        try {
+          const profile = await upsertProfileForUser(data.user.id, email, survey);
+          if (!profile) {
+            console.warn(
+              "[auth] profile upsert returned null after signUp; Auth user created",
+              { userId: data.user.id }
+            );
+          }
+        } catch (err) {
+          console.error(
+            "[auth] profile upsert after signUp failed (Auth OK):",
+            err
+          );
+        }
+      }
 
       if (data.user && data.session) {
-        await upsertProfileForUser(data.user.id, email, survey);
         await syncFromSession(data.session);
         return { needsEmailConfirmation: false };
       }
 
       if (data.user && !data.session) {
-        try {
-          await upsertProfileForUser(data.user.id, email, survey);
-        } catch (err) {
-          console.warn("[auth] profile upsert before confirm skipped:", err);
-        }
         return { needsEmailConfirmation: true };
       }
 

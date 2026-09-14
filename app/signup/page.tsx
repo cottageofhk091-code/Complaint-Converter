@@ -57,6 +57,7 @@ export default function SignupPage() {
         router.push("/mypage");
       }
     } catch (err) {
+      console.error("[signup] registration failed:", err);
       setError(toJapaneseAuthError(err));
     } finally {
       setSubmitting(false);
