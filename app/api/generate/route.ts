@@ -5,6 +5,7 @@ import { createSupabaseAnonClient } from "@/lib/supabase";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   consumeFreeTrialCredit,
+  ensureFreeTrialGranted,
   fetchProfile,
   resolveFreeTrialState,
 } from "@/lib/profiles";
@@ -378,12 +379,43 @@ export async function POST(req: NextRequest) {
           if (profile?.membership_type === "paid") {
             entitledByMembership = true;
           } else {
-            // a) paid 以外で free_trial_used===false（プロファイル欠落時はメタ/フォールバック）
-            const trial = resolveFreeTrialState(profile, meta);
-            if (trial.available) {
+            let trial = resolveFreeTrialState(profile, meta);
+            // 判定不能・未整備なら付与を再試行
+            if (trial.unknown || (!trial.available && !trial.freeTrialUsed)) {
+              await ensureFreeTrialGranted(authUser.id, supabaseAuth);
+              const refreshed = await fetchProfile(authUser.id, supabaseAuth);
+              trial = resolveFreeTrialState(refreshed, {
+                ...meta,
+                free_trial_used:
+                  meta.free_trial_used === true
+                    ? true
+                    : refreshed?.free_trial_used === true
+                      ? true
+                      : false,
+              });
+            }
+
+            if (trial.available && !trial.freeTrialUsed) {
               shouldConsumeFreeTrial = true;
               freeTrialCreditsRemaining = trial.freeTrialCredits;
+            } else if (trial.freeTrialUsed) {
+              console.info("[/api/generate] free trial exhausted", {
+                userId: authUser.id,
+                profileUsed: profile?.free_trial_used,
+                metaUsed: meta.free_trial_used,
+              });
+              return NextResponse.json(
+                {
+                  error:
+                    "初回無料体験はご利用済みです。続きは有料プランでご利用ください。",
+                  code: "FREE_TRIAL_EXHAUSTED",
+                  upgradeRequired: true,
+                  freeTrialUsed: true,
+                },
+                { status: 402 }
+              );
             }
+            // なお判定不能ならプレビュー（paywall）へフォールスルー
           }
         }
       } catch (trialErr) {
@@ -419,13 +451,18 @@ export async function POST(req: NextRequest) {
         try {
           const supabaseAuth = await createSupabaseServerClient();
           const consumed = await consumeFreeTrialCredit(supabaseAuth);
-          usedFreeTrial = consumed.success;
+          usedFreeTrial = consumed.success && consumed.freeTrialUsed;
           freeTrialCreditsRemaining = consumed.freeTrialCredits;
           unlockFull = consumed.success;
           if (!consumed.success) {
             console.error(
-              "[/api/generate] free trial eligible but consume failed; keeping paywall"
+              "[/api/generate] free trial eligible but consume failed; keeping paywall",
+              consumed
             );
+          } else {
+            console.info("[/api/generate] free trial marked used", {
+              freeTrialUsed: consumed.freeTrialUsed,
+            });
           }
         } catch (consumeErr) {
           console.warn("[/api/generate] free trial consume error:", consumeErr);
@@ -436,7 +473,8 @@ export async function POST(req: NextRequest) {
       const payload = {
         ...applyPaywall(result, unlockFull),
         usedFreeTrial,
-        freeTrialCreditsRemaining,
+        freeTrialUsed: usedFreeTrial || undefined,
+        freeTrialCreditsRemaining: usedFreeTrial ? 0 : freeTrialCreditsRemaining,
       };
 
       try {

@@ -204,7 +204,7 @@ function CopyButton({
 }
 
 export default function Home() {
-  const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout , refreshProfile} = useAuth();
+  const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout, refreshProfile, markFreeTrialConsumed } = useAuth();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   /** /?trial=start 経由で初回無料 UI を強制表示 */
   const [trialUnlocked, setTrialUnlocked] = useState(false);
@@ -356,6 +356,18 @@ export default function Home() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    // 無料体験消費済み・有料未契約 → 生成せずアップグレード案内
+    if (
+      isAuthenticated &&
+      !isProUnlocked &&
+      Boolean(user?.freeTrialUsed)
+    ) {
+      setUpgradeOpen(true);
+      setTrialUnlocked(false);
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
@@ -374,12 +386,28 @@ export default function Home() {
       });
 
       const data = await res.json();
+
+      if (res.status === 402 || data.upgradeRequired || data.code === "FREE_TRIAL_EXHAUSTED") {
+        markFreeTrialConsumed();
+        setTrialUnlocked(false);
+        await refreshProfile();
+        setUpgradeOpen(true);
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "初回無料体験はご利用済みです。有料プランへのアップグレードをご検討ください。"
+        );
+        return;
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "生成に失敗しました。");
       }
       setResult(data as GenerateResult);
-      // 生成完了後は結果画面に留まる（有料案内の自動表示・リダイレクトはしない）
-      if (data.usedFreeTrial) {
+
+      if (data.usedFreeTrial || data.freeTrialUsed) {
+        markFreeTrialConsumed();
+        setTrialUnlocked(false);
         await refreshProfile();
       }
     } catch (err) {
@@ -391,11 +419,11 @@ export default function Home() {
 
   const showFullBody = Boolean(result?.isPro && result.replyBody);
 
-  // 初回無料: free_trial_used=false または trial=start 導線。有料 PRO は別扱い
+  // 初回無料: free_trial_used が false のときのみ（trialUnlocked はトースト用途）
   const freeTrialActive =
     Boolean(isAuthenticated) &&
     !isProUnlocked &&
-    (trialUnlocked || !Boolean(user?.freeTrialUsed));
+    !Boolean(user?.freeTrialUsed);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">

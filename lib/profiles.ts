@@ -25,11 +25,13 @@ export type FreeTrialState = {
   available: boolean;
   freeTrialCredits: number;
   freeTrialUsed: boolean;
+  /** プロファイル・メタから判定不能 */
+  unknown?: boolean;
 };
 
 /**
  * profiles / user_metadata から初回無料権を解決する。
- * プロファイル欠落・カラム欠落時も、未消費の新規会員は available=true とする。
+ * どちらか一方でも free_trial_used===true なら消費済み（二重無料を防止）。
  */
 export function resolveFreeTrialState(
   profile: ProfileRow | null | undefined,
@@ -39,12 +41,14 @@ export function resolveFreeTrialState(
     return { available: false, freeTrialCredits: 0, freeTrialUsed: true };
   }
 
+  const profileUsed = profile?.free_trial_used === true;
+  const metaUsed = meta?.free_trial_used === true;
+  if (profileUsed || metaUsed) {
+    return { available: false, freeTrialCredits: 0, freeTrialUsed: true };
+  }
+
   if (profile) {
-    const used = Boolean(profile.free_trial_used);
-    if (used) {
-      return { available: false, freeTrialCredits: 0, freeTrialUsed: true };
-    }
-    // free_trial_used=false なら未消費。credits 列が無い/null の場合は 1 とみなす
+    // free_trial_used が false / null なら未消費
     const hasCreditsColumn = profile.free_trial_credits != null;
     const credits = hasCreditsColumn
       ? normalizeCredits(profile.free_trial_credits)
@@ -56,42 +60,20 @@ export function resolveFreeTrialState(
     };
   }
 
-  const metaUsed = Boolean(meta?.free_trial_used);
-  if (metaUsed) {
-    return { available: false, freeTrialCredits: 0, freeTrialUsed: true };
-  }
-
-  const metaCreditsRaw = meta?.free_trial_credits;
-  const metaCredits =
-    typeof metaCreditsRaw === "number"
-      ? normalizeCredits(metaCreditsRaw)
-      : typeof metaCreditsRaw === "string" && /^\d+$/.test(metaCreditsRaw)
-        ? Number(metaCreditsRaw)
-        : null;
-
-  // プロファイル無しでも、メタの free_trial_used が false/未設定なら新規会員として付与扱い
+  // プロファイル無し: メタの未消費明示
   if (meta && meta.free_trial_used === false) {
-    return {
-      available: true,
-      freeTrialCredits: metaCredits && metaCredits > 0 ? metaCredits : 1,
-      freeTrialUsed: false,
-    };
+    return { available: true, freeTrialCredits: 1, freeTrialUsed: false };
+  }
+  if (meta && !("free_trial_used" in meta) && meta.app_name === "apology") {
+    return { available: true, freeTrialCredits: 1, freeTrialUsed: false };
   }
 
-  if (meta && "free_trial_used" in meta === false) {
-    // サインアップ時にフラグを載せている想定。欠落時も新規寄りに扱う
-    return {
-      available: true,
-      freeTrialCredits: metaCredits && metaCredits > 0 ? metaCredits : 1,
-      freeTrialUsed: false,
-    };
-  }
-
-  // プロファイル取得失敗 + メタ無し: 呼び出し側が「認証済み新規」とみなす場合のフォールバック
+  // 判定不能（ensure 後に再判定する）
   return {
-    available: true,
-    freeTrialCredits: 1,
+    available: false,
+    freeTrialCredits: 0,
     freeTrialUsed: false,
+    unknown: true,
   };
 }
 
@@ -391,93 +373,114 @@ export async function consumeFreeTrialCredit(
     data: { user },
   } = await client.auth.getUser();
   if (!user) {
+    console.error("[profiles] consume aborted: no auth user");
     return { success: false, freeTrialCredits: 0, freeTrialUsed: true };
   }
 
+  const { getWriteClient } = await import("@/lib/supabase/admin");
+  const writer = getWriteClient(client);
+
   // プロファイルが無い場合は先に付与してから消費する
-  let profile = await fetchProfile(user.id, client);
+  let profile = await fetchProfile(user.id, writer);
   if (!profile) {
-    profile = await ensureFreeTrialGranted(user.id, client);
+    profile = await ensureFreeTrialGranted(user.id, writer);
   }
 
-  const { data, error } = await client.rpc("consume_free_trial_credit");
+  async function markAuthMetadataUsed() {
+    try {
+      const { error } = await client.auth.updateUser({
+        data: { free_trial_used: true, free_trial_credits: 0 },
+      });
+      if (error) {
+        console.error("[profiles] auth metadata mark used failed:", error);
+        return false;
+      }
+      return true;
+    } catch (metaErr) {
+      console.error("[profiles] auth metadata mark used threw:", metaErr);
+      return false;
+    }
+  }
 
+  // 1) RPC はユーザーセッション付き client で実行（auth.uid() が必要）
+  const { data, error } = await client.rpc("consume_free_trial_credit");
   if (!error && Array.isArray(data) && data[0]) {
     const row = data[0] as {
       success?: boolean;
       free_trial_credits?: number;
       free_trial_used?: boolean;
     };
-    if (row.success) {
-      try {
-        await client.auth.updateUser({
-          data: { free_trial_used: true, free_trial_credits: 0 },
-        });
-      } catch (metaErr) {
-        console.warn("[profiles] metadata mark used failed:", metaErr);
+    if (row.success || row.free_trial_used === true) {
+      await markAuthMetadataUsed();
+      // Service Role でも profiles を確実に同期
+      const { error: syncErr } = await writer
+        .from("profiles")
+        .update({
+          free_trial_credits: 0,
+          free_trial_used: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+      if (syncErr) {
+        console.error("[profiles] post-RPC profile sync failed:", syncErr);
       }
+      console.info("[profiles] free trial consumed via RPC", {
+        userId: user.id,
+        success: row.success,
+      });
       return {
         success: true,
-        freeTrialCredits: normalizeCredits(row.free_trial_credits),
+        freeTrialCredits: 0,
         freeTrialUsed: true,
       };
     }
+  } else if (error) {
+    console.warn("[profiles] consume RPC failed, using direct update:", {
+      message: error.message,
+      code: error.code,
+    });
   }
 
-  if (error) {
-    console.warn("[profiles] consume RPC failed, fallback update:", error.message);
-  }
-
-  // free_trial_used=false を正本に消費（credits 列が無くても更新できるよう段階フォールバック）
-  const updateCandidates: Record<string, unknown>[] = [
-    {
+  // 2) 直接 UPDATE（Service Role で RLS 回避）。NULL / false 両方を消費対象に
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await writer
+    .from("profiles")
+    .update({
       free_trial_credits: 0,
       free_trial_used: true,
-      updated_at: new Date().toISOString(),
-    },
-    {
-      free_trial_used: true,
-      updated_at: new Date().toISOString(),
-    },
-  ];
+      updated_at: now,
+    })
+    .eq("id", user.id)
+    .or("free_trial_used.eq.false,free_trial_used.is.null")
+    .select("free_trial_credits, free_trial_used")
+    .maybeSingle();
 
-  for (const payload of updateCandidates) {
-    const { data: updated, error: updateError } = await client
-      .from("profiles")
-      .update(payload)
-      .eq("id", user.id)
-      .eq("free_trial_used", false)
-      .select("free_trial_credits, free_trial_used")
-      .maybeSingle();
-
-    if (!updateError && updated) {
-      try {
-        await client.auth.updateUser({
-          data: { free_trial_used: true, free_trial_credits: 0 },
-        });
-      } catch (metaErr) {
-        console.warn("[profiles] metadata mark used failed:", metaErr);
-      }
-      return {
-        success: true,
-        freeTrialCredits: normalizeCredits(updated.free_trial_credits),
-        freeTrialUsed: Boolean(updated.free_trial_used),
-      };
-    }
-
-    if (updateError) {
-      console.error("[profiles] consume fallback update failed:", {
-        message: updateError.message,
-        code: updateError.code,
-        payload,
-      });
-    }
+  if (updateError) {
+    console.error("[profiles] consume direct update failed:", {
+      message: updateError.message,
+      code: updateError.code,
+      details: updateError.details,
+      hint: updateError.hint,
+      userId: user.id,
+    });
   }
 
-  // 行が無い場合: used=true のプロファイルを作成して消費完了扱い
-  const now = new Date().toISOString();
+  if (updated) {
+    await markAuthMetadataUsed();
+    console.info("[profiles] free trial consumed via update", { userId: user.id });
+    return { success: true, freeTrialCredits: 0, freeTrialUsed: true };
+  }
+
+  // 既に used=true なら冪等成功
+  const latest = await fetchProfile(user.id, writer);
+  if (latest?.free_trial_used === true) {
+    await markAuthMetadataUsed();
+    return { success: true, freeTrialCredits: 0, freeTrialUsed: true };
+  }
+
+  // 3) upsert で used=true を強制
   const meta = (user.user_metadata || {}) as Record<string, unknown>;
-  const { data: inserted, error: insertError } = await client
+  const { data: upserted, error: upsertError } = await writer
     .from("profiles")
     .upsert(
       {
@@ -499,35 +502,27 @@ export async function consumeFreeTrialCredit(
     .select("free_trial_credits, free_trial_used")
     .maybeSingle();
 
-  if (!insertError && inserted) {
-    try {
-      await client.auth.updateUser({
-        data: { free_trial_used: true, free_trial_credits: 0 },
-      });
-    } catch {
-      // ignore
-    }
-    return {
-      success: true,
-      freeTrialCredits: 0,
-      freeTrialUsed: true,
-    };
+  if (upsertError) {
+    console.error("[profiles] consume upsert failed:", {
+      message: upsertError.message,
+      code: upsertError.code,
+      userId: user.id,
+    });
   }
 
-  // 最終手段: メタデータだけでも消費済みにして、今回の生成は許可する
-  try {
-    await client.auth.updateUser({
-      data: { free_trial_used: true, free_trial_credits: 0 },
+  const metaOk = await markAuthMetadataUsed();
+
+  if (upserted?.free_trial_used === true || metaOk) {
+    console.info("[profiles] free trial consumed via upsert/metadata", {
+      userId: user.id,
+      profile: Boolean(upserted),
+      metaOk,
     });
-    console.warn(
-      "[profiles] consume marked on auth metadata only (profile write failed)",
-      insertError?.message
-    );
     return { success: true, freeTrialCredits: 0, freeTrialUsed: true };
-  } catch (metaErr) {
-    console.error("[profiles] consume totally failed:", metaErr);
-    return { success: false, freeTrialCredits: 0, freeTrialUsed: true };
   }
+
+  console.error("[profiles] consume totally failed", { userId: user.id });
+  return { success: false, freeTrialCredits: 0, freeTrialUsed: false };
 }
 
 export function profileToAuthUser(

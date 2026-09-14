@@ -9,14 +9,17 @@ export default function Header() {
   const { user, isAuthenticated, isProUnlocked, ready, logout } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
 
-  const freeTrialLeft =
+  const showFreeTrialBadge =
     isAuthenticated &&
     user &&
     !isProUnlocked &&
-    user.membershipType !== "paid" &&
-    !Boolean(user.freeTrialUsed)
-      ? Math.max(user.freeTrialCredits ?? 1, 1)
-      : 0;
+    user.membershipType !== "paid";
+
+  const freeTrialLeft = showFreeTrialBadge
+    ? Boolean(user.freeTrialUsed)
+      ? 0
+      : Math.max(user.freeTrialCredits ?? 1, 1)
+    : null;
 
   return (
     <>
@@ -40,8 +43,14 @@ export default function Header() {
               有料プランについて
             </button>
 
-            {freeTrialLeft > 0 && (
-              <span className="hidden rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 sm:inline-flex">
+            {freeTrialLeft !== null && (
+              <span
+                className={`hidden rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold sm:inline-flex ${
+                  freeTrialLeft > 0
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                    : "border-slate-600/60 bg-slate-800/60 text-slate-400"
+                }`}
+              >
                 初回無料体験：残り{freeTrialLeft}回
               </span>
             )}

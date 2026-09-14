@@ -49,6 +49,8 @@ type AuthContextValue = {
   }) => void;
   clearProAccess: () => void;
   refreshProfile: () => Promise<void>;
+  /** 無料体験消費後に UI を即時同期 */
+  markFreeTrialConsumed: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -418,6 +420,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await syncFromSession(session);
   }, [session, syncFromSession]);
 
+  const markFreeTrialConsumed = useCallback(() => {
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            freeTrialUsed: true,
+            freeTrialCredits: 0,
+          }
+        : prev
+    );
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -434,6 +448,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activateProFromCheckout,
       clearProAccess,
       refreshProfile,
+      markFreeTrialConsumed,
     }),
     [
       user,
@@ -448,6 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activateProFromCheckout,
       clearProAccess,
       refreshProfile,
+      markFreeTrialConsumed,
     ]
   );
 
