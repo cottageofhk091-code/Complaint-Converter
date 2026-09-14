@@ -6,8 +6,18 @@ import Link from "next/link";
 import { useState } from "react";
 
 export default function Header() {
-  const { user, isAuthenticated, isProUnlocked, ready, logout } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isProUnlocked,
+    ready,
+    logout,
+    toggleDevPaidPlan,
+    isDevPaidOverride,
+    signInAsDevMock,
+  } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
+  const isDev = process.env.NODE_ENV === "development";
 
   const showFreeTrialBadge =
     isAuthenticated &&
@@ -20,6 +30,8 @@ export default function Header() {
       ? 0
       : Math.max(user.freeTrialCredits ?? 1, 1)
     : null;
+
+  const isPaidUi = isProUnlocked || user?.membershipType === "paid";
 
   return (
     <>
@@ -35,6 +47,26 @@ export default function Header() {
           </Link>
 
           <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {isDev && (
+              <button
+                type="button"
+                onClick={toggleDevPaidPlan}
+                title="ローカル開発専用: 有料/無料を切り替え（履歴FIFO確認用）"
+                className={`rounded-lg border px-2 py-1.5 text-[10px] font-semibold transition sm:text-[11px] ${
+                  isPaidUi
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                    : "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20"
+                }`}
+              >
+                [Dev] 有料プラン体験
+                {isDevPaidOverride === null
+                  ? "切替"
+                  : isPaidUi
+                    ? "：ON"
+                    : "：OFF"}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setPricingOpen(true)}
@@ -68,6 +100,9 @@ export default function Header() {
                     {(isProUnlocked || user.membershipType === "paid") && (
                       <span className="ml-1 text-amber-400">· PRO</span>
                     )}
+                    {isDev && isDevPaidOverride !== null && (
+                      <span className="ml-1 text-fuchsia-300">· DEV</span>
+                    )}
                   </p>
                 </div>
                 <Link
@@ -86,6 +121,18 @@ export default function Header() {
               </>
             ) : (
               <>
+                {isDev && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      signInAsDevMock();
+                    }}
+                    title="ローカル開発専用: メール確認なしで即時ログイン"
+                    className="rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-1.5 text-[10px] font-semibold text-fuchsia-200 transition hover:bg-fuchsia-500/20 sm:text-[11px]"
+                  >
+                    [Dev] モックログイン
+                  </button>
+                )}
                 <Link
                   href="/login"
                   className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"

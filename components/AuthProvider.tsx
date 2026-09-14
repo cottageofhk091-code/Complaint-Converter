@@ -4,6 +4,14 @@ import type { AuthUser } from "@/lib/auth";
 import { clearLegacyAuthStorage } from "@/lib/auth";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import {
+  DEV_MOCK_USER,
+  IS_DEV,
+  readDevMockUser,
+  readDevPaidOverride,
+  writeDevMockUser,
+  writeDevPaidOverride,
+} from "@/lib/dev-auth";
+import {
   fetchProfile,
   markProfilePaid,
   profileToAuthUser,
@@ -41,6 +49,8 @@ type AuthContextValue = {
     region: string;
   }) => Promise<{ needsEmailConfirmation: boolean }>;
   signIn: (input: { email: string; password: string }) => Promise<void>;
+  /** 開発環境: メール確認なしで即時ログイン */
+  signInAsDevMock: () => void;
   signOut: () => Promise<void>;
   logout: () => void;
   activateProFromCheckout: (input: {
@@ -51,6 +61,12 @@ type AuthContextValue = {
   refreshProfile: () => Promise<void>;
   /** 無料体験消費後に UI を即時同期 */
   markFreeTrialConsumed: () => void;
+  /** 開発環境のみ: 有料プラン体験のトグル */
+  toggleDevPaidPlan: () => void;
+  /** 開発環境のみ: 有料体験オーバーライド中か */
+  isDevPaidOverride: boolean | null;
+  /** 開発環境のみ: モックログイン中か */
+  isDevMockAuth: boolean;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -102,7 +118,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [proSessionId, setProSessionId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [devPaidOverride, setDevPaidOverride] = useState<boolean | null>(null);
+  const [devMockAuth, setDevMockAuth] = useState(false);
   const supabaseReady = isSupabaseConfigured();
+
+  useEffect(() => {
+    if (!IS_DEV) return;
+    setDevPaidOverride(readDevPaidOverride());
+    const mock = readDevMockUser();
+    if (mock) {
+      setUser(mock);
+      setDevMockAuth(true);
+    }
+  }, []);
 
   const syncFromSession = useCallback(async (nextSession: Session | null) => {
     setSession(nextSession);
@@ -128,8 +156,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProSessionId(activeProId);
 
     if (!nextSession?.user) {
+      // 実セッション無しでも Dev モックを維持
+      if (IS_DEV) {
+        const mock = readDevMockUser();
+        if (mock) {
+          setUser(mock);
+          setDevMockAuth(true);
+          return;
+        }
+      }
+      setDevMockAuth(false);
       setUser(null);
       return;
+    }
+
+    // 実ログインしたらモックを解除
+    if (IS_DEV) {
+      writeDevMockUser(null);
+      setDevMockAuth(false);
     }
 
     const profile = await fetchProfile(nextSession.user.id);
@@ -182,6 +226,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function init() {
       if (!supabase) {
+        if (IS_DEV) {
+          const mock = readDevMockUser();
+          if (mock && !cancelled) {
+            setUser(mock);
+            setDevMockAuth(true);
+          }
+        }
         const storedProId = getProSessionIdFromStorage();
         if (storedProId) {
           const verified = await verifyProSession(storedProId);
@@ -235,6 +286,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       region: string;
     }) => {
       if (!supabase) {
+        // 開発環境: Supabase 未設定でもモック登録で続行
+        if (IS_DEV) {
+          const mock: AuthUser = {
+            ...DEV_MOCK_USER,
+            email: input.email.trim().toLowerCase() || DEV_MOCK_USER.email,
+            name:
+              input.displayName?.trim() ||
+              input.email.split("@")[0] ||
+              DEV_MOCK_USER.name,
+            ageGroup: input.ageGroup,
+            region: input.region,
+          };
+          writeDevMockUser(mock);
+          setUser(mock);
+          setDevMockAuth(true);
+          setSession(null);
+          return { needsEmailConfirmation: false };
+        }
         throw new Error(
           "Supabase が未設定です。環境変数を設定してから登録してください。"
         );
@@ -313,6 +382,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { needsEmailConfirmation: false };
       }
 
+      // 開発環境: Confirm Email でセッションが無い場合はモックで続行
+      if (IS_DEV && data.user && !data.session) {
+        const mock: AuthUser = {
+          ...DEV_MOCK_USER,
+          id: data.user.id,
+          email: data.user.email || email,
+          name:
+            input.displayName?.trim() ||
+            displayNameFromUser(data.user),
+          ageGroup: input.ageGroup,
+          region: input.region,
+        };
+        writeDevMockUser(mock);
+        setUser(mock);
+        setDevMockAuth(true);
+        return { needsEmailConfirmation: false };
+      }
+
       if (data.user && !data.session) {
         return { needsEmailConfirmation: true };
       }
@@ -325,6 +412,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (input: { email: string; password: string }) => {
       if (!supabase) {
+        if (IS_DEV) {
+          const mock: AuthUser = {
+            ...DEV_MOCK_USER,
+            email: input.email.trim().toLowerCase() || DEV_MOCK_USER.email,
+            name: input.email.split("@")[0] || DEV_MOCK_USER.name,
+          };
+          writeDevMockUser(mock);
+          setUser(mock);
+          setDevMockAuth(true);
+          setSession(null);
+          return;
+        }
         throw new Error(
           "Supabase が未設定です。環境変数を設定してからログインしてください。"
         );
@@ -335,7 +434,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: input.password,
       });
 
-      if (error) throw new Error(toJapaneseAuthError(error));
+      if (error) {
+        // 開発環境: メール未確認などで失敗したらモックにフォールバック
+        if (IS_DEV) {
+          console.warn(
+            "[auth] signIn failed in development, falling back to mock:",
+            error.message
+          );
+          const mock: AuthUser = {
+            ...DEV_MOCK_USER,
+            email: input.email.trim().toLowerCase() || DEV_MOCK_USER.email,
+            name: input.email.split("@")[0] || DEV_MOCK_USER.name,
+          };
+          writeDevMockUser(mock);
+          setUser(mock);
+          setDevMockAuth(true);
+          setSession(null);
+          return;
+        }
+        throw new Error(toJapaneseAuthError(error));
+      }
 
       if (data.user) {
         const existing = await fetchProfile(data.user.id);
@@ -371,7 +489,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [syncFromSession]
   );
 
+  const signInAsDevMock = useCallback(() => {
+    if (!IS_DEV) return;
+    writeDevMockUser(DEV_MOCK_USER);
+    setUser(DEV_MOCK_USER);
+    setDevMockAuth(true);
+    setSession(null);
+    notifyProChanged();
+  }, []);
+
   const signOut = useCallback(async () => {
+    if (IS_DEV) {
+      writeDevMockUser(null);
+      setDevMockAuth(false);
+    }
     if (supabase) {
       await supabase.auth.signOut();
     }
@@ -387,6 +518,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearProAccess = useCallback(() => {
     setProSessionIdInStorage(null);
     setProSessionId(null);
+    if (IS_DEV) {
+      writeDevPaidOverride(false);
+      setDevPaidOverride(false);
+    }
     setUser((prev) =>
       prev ? { ...prev, plan: "free", membershipType: "free" } : prev
     );
@@ -417,8 +552,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshProfile = useCallback(async () => {
+    if (IS_DEV && devMockAuth && !session?.user) {
+      const mock = readDevMockUser();
+      if (mock) {
+        setUser(mock);
+        return;
+      }
+    }
     await syncFromSession(session);
-  }, [session, syncFromSession]);
+  }, [devMockAuth, session, syncFromSession]);
 
   const markFreeTrialConsumed = useCallback(() => {
     setUser((prev) =>
@@ -432,38 +574,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const toggleDevPaidPlan = useCallback(() => {
+    if (!IS_DEV) return;
+    setDevPaidOverride((prev) => {
+      const currentlyPaid =
+        prev === true ||
+        (prev !== false &&
+          (Boolean(proSessionId) ||
+            user?.membershipType === "paid" ||
+            user?.plan === "pro"));
+      const next = !currentlyPaid;
+      writeDevPaidOverride(next);
+      return next;
+    });
+    notifyProChanged();
+  }, [proSessionId, user?.membershipType, user?.plan]);
+
+  const displayUser = useMemo(() => {
+    if (!user) return null;
+    if (!IS_DEV || devPaidOverride === null) return user;
+    if (devPaidOverride) {
+      return {
+        ...user,
+        plan: "pro" as const,
+        membershipType: "paid" as const,
+      };
+    }
+    return {
+      ...user,
+      plan: "free" as const,
+      membershipType: "free" as const,
+    };
+  }, [user, devPaidOverride]);
+
+  const effectiveProUnlocked = useMemo(() => {
+    if (IS_DEV && devPaidOverride !== null) return devPaidOverride;
+    return Boolean(proSessionId);
+  }, [devPaidOverride, proSessionId]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
+      user: displayUser,
       session,
-      isAuthenticated: !!session?.user,
-      isProUnlocked: Boolean(proSessionId),
+      isAuthenticated: !!session?.user || (IS_DEV && devMockAuth),
+      isProUnlocked: effectiveProUnlocked,
       proSessionId,
       ready,
       supabaseReady,
       signUp,
       signIn,
+      signInAsDevMock,
       signOut,
       logout,
       activateProFromCheckout,
       clearProAccess,
       refreshProfile,
       markFreeTrialConsumed,
+      toggleDevPaidPlan,
+      isDevPaidOverride: IS_DEV ? devPaidOverride : null,
+      isDevMockAuth: IS_DEV && devMockAuth,
     }),
     [
-      user,
+      displayUser,
       session,
+      devMockAuth,
+      effectiveProUnlocked,
       proSessionId,
       ready,
       supabaseReady,
       signUp,
       signIn,
+      signInAsDevMock,
       signOut,
       logout,
       activateProFromCheckout,
       clearProAccess,
       refreshProfile,
       markFreeTrialConsumed,
+      toggleDevPaidPlan,
+      devPaidOverride,
     ]
   );
 

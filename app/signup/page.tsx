@@ -9,8 +9,15 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function SignupPage() {
-  const { signUp, isAuthenticated, supabaseReady, ready } = useAuth();
+  const {
+    signUp,
+    signInAsDevMock,
+    isAuthenticated,
+    supabaseReady,
+    ready,
+  } = useAuth();
   const router = useRouter();
+  const isDev = process.env.NODE_ENV === "development";
 
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -107,10 +114,28 @@ export default function SignupPage() {
           </p>
         </header>
 
-        {!supabaseReady && (
+        {!supabaseReady && !isDev && (
           <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
             Supabase 環境変数が未設定のため、現在登録できません。
           </p>
+        )}
+
+        {isDev && (
+          <div className="mb-4 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/10 p-3">
+            <p className="mb-2 text-xs text-fuchsia-200">
+              開発環境: メール確認を待たず、テストユーザーとして即時ログインできます。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                signInAsDevMock();
+                router.push("/mypage");
+              }}
+              className="w-full rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/20 px-3 py-2.5 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/30"
+            >
+              [Dev] モックログインでスキップ
+            </button>
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -219,7 +244,7 @@ export default function SignupPage() {
 
           <button
             type="submit"
-            disabled={submitting || !supabaseReady}
+            disabled={submitting || (!supabaseReady && !isDev)}
             className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "登録中…" : "無料会員登録する"}

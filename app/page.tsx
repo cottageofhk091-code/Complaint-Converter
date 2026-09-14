@@ -13,6 +13,7 @@ import {
 import { startStripeCheckout } from "@/lib/start-checkout";
 import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
 import GenerateProgress from "@/components/GenerateProgress";
+import CopyButton from "@/components/CopyButton";
 import PricingModal from "@/components/PricingModal";
 import { useAuth } from "@/components/AuthProvider";
 import { pushGenerationHistory } from "@/lib/generation-history";
@@ -113,96 +114,6 @@ function riskStyles(level: GenerateResult["riskLevel"]) {
         width: "w-1/3",
       };
   }
-}
-
-function CopyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
-
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
-function CopyButton({
-  text,
-  label = "コピー",
-  className = "",
-}: {
-  text: string;
-  label?: string;
-  className?: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      alert("クリップボードへのコピーに失敗しました。");
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label={copied ? "コピーしました" : label}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
-        copied
-          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400"
-          : "border-slate-600/80 bg-slate-950/60 text-slate-300 hover:border-blue-500/50 hover:bg-blue-500/10 hover:text-blue-300"
-      } ${className}`}
-    >
-      {copied ? (
-        <>
-          <CheckIcon className="h-3.5 w-3.5" />
-          コピーしました！
-        </>
-      ) : (
-        <>
-          <CopyIcon className="h-3.5 w-3.5" />
-          {label}
-        </>
-      )}
-    </button>
-  );
 }
 
 export default function Home() {
@@ -369,6 +280,10 @@ export default function Home() {
           tone,
           checkoutSessionId: proSessionId || undefined,
           isRegistered: isAuthenticated,
+          // 開発環境のみ: 有料プラン体験 ON を API 側でも全文アンロックに反映
+          ...(process.env.NODE_ENV === "development" && isProUnlocked
+            ? { devPremium: true }
+            : {}),
         }),
       });
 
@@ -384,18 +299,21 @@ export default function Home() {
         await refreshProfile();
       }
 
-      // 有料会員のみ履歴へ自動保存（最大5件・FIFO）
+      // 有料会員のみ履歴へ自動保存（最大5件・FIFO）。全文が無い場合はプレビューを保存
       const isPaid =
         isProUnlocked || user?.membershipType === "paid" || user?.plan === "pro";
-      if (isPaid && user?.id && next.isPro && next.replyBody) {
-        pushGenerationHistory(user.id, {
-          riskLevel: next.riskLevel,
-          riskReason: next.riskReason,
-          subjectSuggestions: next.subjectSuggestions,
-          replyBody: next.replyBody,
-          freePreview: next.freePreview,
-          preventionNotes: next.preventionNotes,
-        });
+      if (isPaid && user?.id) {
+        const body = next.replyBody || next.freePreview;
+        if (body) {
+          pushGenerationHistory(user.id, {
+            riskLevel: next.riskLevel,
+            riskReason: next.riskReason,
+            subjectSuggestions: next.subjectSuggestions ?? [],
+            replyBody: next.replyBody || body,
+            freePreview: next.freePreview ?? "",
+            preventionNotes: next.preventionNotes ?? [],
+          });
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "予期しないエラーです。");
@@ -575,20 +493,15 @@ export default function Home() {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={loading || !content.trim()}
-          className="animate-pulse-glow flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-        >
-          {loading ? (
-            <>
-              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              神対応を生成中…
-            </>
-          ) : (
-            "神対応メールを生成する"
-          )}
-        </button>
+        {!loading && (
+          <button
+            type="submit"
+            disabled={!content.trim()}
+            className="animate-pulse-glow flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          >
+            神対応メールを生成する
+          </button>
+        )}
 
         <GenerateProgress active={loading} />
 
@@ -640,12 +553,12 @@ export default function Home() {
                 推奨件名案
               </h2>
               <CopyButton
-                text={result.subjectSuggestions.join("\n")}
+                text={(result.subjectSuggestions ?? []).join("\n")}
                 label="すべてコピー"
               />
             </div>
             <ol className="space-y-2">
-              {result.subjectSuggestions.map((s, i) => (
+              {(result.subjectSuggestions ?? []).map((s, i) => (
                 <li
                   key={i}
                   className="flex items-start gap-3 rounded-lg border border-slate-700/50 bg-slate-950/40 px-3 py-2.5 text-sm text-slate-200"
@@ -752,13 +665,13 @@ export default function Home() {
           </div>
 
           {/* Prevention notes */}
-          {result.preventionNotes.length > 0 && (
+          {(result.preventionNotes ?? []).length > 0 && (
           <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-6">
             <h2 className="mb-3 text-sm font-semibold tracking-wide text-slate-300">
               二次炎上防止メモ
             </h2>
             <ul className="space-y-2">
-              {result.preventionNotes.map((note, i) => (
+              {(result.preventionNotes ?? []).map((note, i) => (
                 <li
                   key={i}
                   className="flex gap-2.5 text-sm leading-relaxed text-slate-300"

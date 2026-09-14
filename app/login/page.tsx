@@ -8,10 +8,18 @@ import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function LoginForm() {
-  const { signIn, isAuthenticated, user, supabaseReady, ready } = useAuth();
+  const {
+    signIn,
+    signInAsDevMock,
+    isAuthenticated,
+    user,
+    supabaseReady,
+    ready,
+  } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailConfirmed = searchParams.get("message") === "email-confirmed";
+  const isDev = process.env.NODE_ENV === "development";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,10 +103,28 @@ function LoginForm() {
           </p>
         </header>
 
-        {!supabaseReady && (
+        {!supabaseReady && !isDev && (
           <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
             Supabase 環境変数が未設定のため、現在ログインできません。
           </p>
+        )}
+
+        {isDev && (
+          <div className="mb-4 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/10 p-3">
+            <p className="mb-2 text-xs text-fuchsia-200">
+              開発環境: メール確認なしでテストユーザーとして即時ログインできます。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                signInAsDevMock();
+                router.push("/mypage");
+              }}
+              className="w-full rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/20 px-3 py-2.5 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/30"
+            >
+              [Dev] モックログイン（テストユーザー）
+            </button>
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -140,7 +166,7 @@ function LoginForm() {
 
           <button
             type="submit"
-            disabled={submitting || !supabaseReady}
+            disabled={submitting || (!supabaseReady && !isDev)}
             className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "ログイン中…" : "ログインする"}

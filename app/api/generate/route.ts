@@ -39,6 +39,11 @@ interface GenerateRequest {
   checkoutSessionId?: string;
   /** ログイン済みかどうか（ログ用。Paywall 判定には使わない） */
   isRegistered?: boolean;
+  /**
+   * 開発環境のみ: フロントの「有料プラン体験」ON 時に全文アンロック。
+   * production では無視する。
+   */
+  devPremium?: boolean;
 }
 
 interface GenerateResult {
@@ -429,9 +434,14 @@ export async function POST(req: NextRequest) {
       const result = extractJson(text);
       // 無料権の消費は生成成功後のみ。Stripe PRO / paid は消費しない。
       let usedFreeTrial = false;
-      let unlockFull = Boolean(access.entitled || entitledByMembership);
+      const devPremiumUnlock =
+        process.env.NODE_ENV === "development" && body.devPremium === true;
+      let unlockFull = Boolean(
+        access.entitled || entitledByMembership || devPremiumUnlock
+      );
 
-      if (!unlockFull && shouldConsumeFreeTrial) {
+      // 開発の有料モック時は無料体験を消費しない
+      if (!unlockFull && shouldConsumeFreeTrial && !devPremiumUnlock) {
         try {
           const supabaseAuth = await createSupabaseServerClient();
           const consumed = await consumeFreeTrialCredit(supabaseAuth);
