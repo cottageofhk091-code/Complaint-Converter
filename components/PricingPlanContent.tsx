@@ -4,6 +4,7 @@ import { useAuth } from "@/components/AuthProvider";
 import {
   FREE_TRIAL_TICKET_LABEL,
   formatFreeTrialPromoHeadline,
+  formatHistoryBenefitLine,
   formatProCtaLabel,
   formatProPriceTaxIncluded,
   PRO_PLAN_FEATURES,
@@ -82,6 +83,9 @@ export default function PricingPlanContent({
             </li>
           ))}
         </ul>
+        <p className="mt-3 text-xs leading-relaxed text-slate-500">
+          {formatHistoryBenefitLine()}
+        </p>
       </section>
 
       <section className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">

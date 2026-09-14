@@ -12,8 +12,10 @@ import {
 } from "@/lib/pricing";
 import { startStripeCheckout } from "@/lib/start-checkout";
 import FreeTrialPromoBanner from "@/components/FreeTrialPromoBanner";
+import GenerateProgress from "@/components/GenerateProgress";
 import PricingModal from "@/components/PricingModal";
 import { useAuth } from "@/components/AuthProvider";
+import { pushGenerationHistory } from "@/lib/generation-history";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type FaultLevel =
@@ -206,8 +208,6 @@ function CopyButton({
 export default function Home() {
   const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout, refreshProfile, markFreeTrialConsumed } = useAuth();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  /** /?trial=start 経由で初回無料 UI を強制表示 */
-  const [trialUnlocked, setTrialUnlocked] = useState(false);
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
   const [responsePolicy, setResponsePolicy] =
@@ -227,7 +227,6 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("trial") !== "start") return;
     window.history.replaceState({}, "", window.location.pathname);
-    setTrialUnlocked(true);
     setStatusToast("初回無料体験が利用できます。生成すると全文が表示されます。");
     void refreshProfile();
     const form = document.getElementById("generate-form");
@@ -356,18 +355,6 @@ export default function Home() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-
-    // 無料体験消費済み・有料未契約 → 生成せずアップグレード案内
-    if (
-      isAuthenticated &&
-      !isProUnlocked &&
-      Boolean(user?.freeTrialUsed)
-    ) {
-      setUpgradeOpen(true);
-      setTrialUnlocked(false);
-      return;
-    }
-
     setLoading(true);
     setResult(null);
 
@@ -386,29 +373,29 @@ export default function Home() {
       });
 
       const data = await res.json();
-
-      if (res.status === 402 || data.upgradeRequired || data.code === "FREE_TRIAL_EXHAUSTED") {
-        markFreeTrialConsumed();
-        setTrialUnlocked(false);
-        await refreshProfile();
-        setUpgradeOpen(true);
-        setError(
-          typeof data.error === "string"
-            ? data.error
-            : "初回無料体験はご利用済みです。有料プランへのアップグレードをご検討ください。"
-        );
-        return;
-      }
-
       if (!res.ok) {
         throw new Error(data.error || "生成に失敗しました。");
       }
-      setResult(data as GenerateResult);
+      const next = data as GenerateResult;
+      setResult(next);
 
       if (data.usedFreeTrial || data.freeTrialUsed) {
         markFreeTrialConsumed();
-        setTrialUnlocked(false);
         await refreshProfile();
+      }
+
+      // 有料会員のみ履歴へ自動保存（最大5件・FIFO）
+      const isPaid =
+        isProUnlocked || user?.membershipType === "paid" || user?.plan === "pro";
+      if (isPaid && user?.id && next.isPro && next.replyBody) {
+        pushGenerationHistory(user.id, {
+          riskLevel: next.riskLevel,
+          riskReason: next.riskReason,
+          subjectSuggestions: next.subjectSuggestions,
+          replyBody: next.replyBody,
+          freePreview: next.freePreview,
+          preventionNotes: next.preventionNotes,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "予期しないエラーです。");
@@ -419,7 +406,7 @@ export default function Home() {
 
   const showFullBody = Boolean(result?.isPro && result.replyBody);
 
-  // 初回無料: free_trial_used が false のときのみ（trialUnlocked はトースト用途）
+  // 初回無料: free_trial_used が false のときのみ
   const freeTrialActive =
     Boolean(isAuthenticated) &&
     !isProUnlocked &&
@@ -603,6 +590,8 @@ export default function Home() {
           )}
         </button>
 
+        <GenerateProgress active={loading} />
+
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             {error}
@@ -612,6 +601,12 @@ export default function Home() {
 
       {result && (
         <section className="mt-8 space-y-5 animate-fade-up">
+          {!showFullBody && (
+            <p className="rounded-lg border border-slate-600/50 bg-slate-900/40 px-3 py-2 text-center text-xs text-slate-400">
+              無料プランでの生成結果です（プレビュー表示）
+            </p>
+          )}
+
           {/* Risk */}
           <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">

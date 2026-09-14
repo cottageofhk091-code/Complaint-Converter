@@ -398,24 +398,8 @@ export async function POST(req: NextRequest) {
             if (trial.available && !trial.freeTrialUsed) {
               shouldConsumeFreeTrial = true;
               freeTrialCreditsRemaining = trial.freeTrialCredits;
-            } else if (trial.freeTrialUsed) {
-              console.info("[/api/generate] free trial exhausted", {
-                userId: authUser.id,
-                profileUsed: profile?.free_trial_used,
-                metaUsed: meta.free_trial_used,
-              });
-              return NextResponse.json(
-                {
-                  error:
-                    "初回無料体験はご利用済みです。続きは有料プランでご利用ください。",
-                  code: "FREE_TRIAL_EXHAUSTED",
-                  upgradeRequired: true,
-                  freeTrialUsed: true,
-                },
-                { status: 402 }
-              );
             }
-            // なお判定不能ならプレビュー（paywall）へフォールスルー
+            // 消費済みでも生成自体は続行（プレビュー／paywall）。遮断・402 は行わない。
           }
         }
       } catch (trialErr) {

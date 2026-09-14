@@ -58,5 +58,17 @@ export const PRO_PLAN_FEATURES = [
   "お詫びメール全文の表示・コピー",
   "プレミアム品質の生成結果",
   "二次炎上防止メモのフル活用",
+  "生成結果を最大5件までマイページに自動保存・閲覧",
   "継続利用時の安定した業務効率化",
 ] as const;
+
+/** 履歴保存の注意書き（料金・マイページ共通） */
+export const HISTORY_LIMIT = 5;
+
+export function formatHistoryBenefitLine(): string {
+  return `有料プランなら生成結果を最大${HISTORY_LIMIT}件までマイページに自動保存・閲覧可能（※${HISTORY_LIMIT + 1}件目以降は古い順に自動上書き）`;
+}
+
+export function formatHistoryLimitNote(): string {
+  return `※履歴は最新${HISTORY_LIMIT}件まで保存されます（有料プラン限定）`;
+}
