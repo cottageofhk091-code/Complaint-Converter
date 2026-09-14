@@ -131,19 +131,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const profile = await fetchProfile(nextSession.user.id);
+    const meta = (nextSession.user.user_metadata || {}) as Record<
+      string,
+      unknown
+    >;
+
+    // プロファイルが無い新規会員は初回無料権を付与してから UI に反映
+    let resolvedProfile = profile;
+    if (!resolvedProfile) {
+      try {
+        resolvedProfile = await upsertProfileForUser(
+          nextSession.user.id,
+          nextSession.user.email || "",
+          {
+            displayName: displayNameFromUser(nextSession.user),
+            ageGroup:
+              typeof meta.age_group === "string" ? meta.age_group : "unknown",
+            region: typeof meta.region === "string" ? meta.region : "unknown",
+            membershipType: "free",
+          }
+        );
+      } catch (err) {
+        console.warn("[auth] profile ensure on sync failed:", err);
+      }
+    }
+
     setUser(
       profileToAuthUser(
-        profile,
+        resolvedProfile,
         {
           id: nextSession.user.id,
           email: nextSession.user.email || "",
           name: displayNameFromUser(nextSession.user),
         },
-        Boolean(activeProId)
+        Boolean(activeProId),
+        meta
       )
     );
 
-    if (activeProId && profile?.membership_type !== "paid") {
+    if (activeProId && resolvedProfile?.membership_type !== "paid") {
       void markProfilePaid(nextSession.user.id);
     }
   }, []);

@@ -206,6 +206,8 @@ function CopyButton({
 export default function Home() {
   const { user, isAuthenticated, isProUnlocked, proSessionId, activateProFromCheckout , refreshProfile} = useAuth();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  /** /?trial=start 経由で初回無料 UI を強制表示 */
+  const [trialUnlocked, setTrialUnlocked] = useState(false);
   const [content, setContent] = useState("");
   const [faultLevel, setFaultLevel] = useState<FaultLevel>("unclear");
   const [responsePolicy, setResponsePolicy] =
@@ -225,9 +227,14 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("trial") !== "start") return;
     window.history.replaceState({}, "", window.location.pathname);
+    setTrialUnlocked(true);
+    setStatusToast("初回無料体験が利用できます。生成すると全文が表示されます。");
+    void refreshProfile();
     const form = document.getElementById("generate-form");
     form?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+    const t = window.setTimeout(() => setStatusToast(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [refreshProfile]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -384,6 +391,12 @@ export default function Home() {
 
   const showFullBody = Boolean(result?.isPro && result.replyBody);
 
+  // 初回無料: free_trial_used=false または trial=start 導線。有料 PRO は別扱い
+  const freeTrialActive =
+    Boolean(isAuthenticated) &&
+    !isProUnlocked &&
+    (trialUnlocked || !Boolean(user?.freeTrialUsed));
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
       {showUnlockToast && (
@@ -436,13 +449,11 @@ export default function Home() {
         </div>
       )}
 
-      {isAuthenticated &&
-        !isProUnlocked &&
-        (user?.freeTrialCredits ?? 0) > 0 && (
+      {freeTrialActive && (
           <div className="mb-6 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
             <span className="font-semibold text-emerald-300">初回無料体験適用中</span>
             <span className="mt-0.5 block text-emerald-100/85">
-              プレミアム生成（全文表示）があと {user?.freeTrialCredits} 回まで無料です。
+              プレミアム生成（全文表示）を1回無料でお試しいただけます。生成すると返信全文が利用できます。
             </span>
           </div>
         )}
@@ -686,10 +697,7 @@ export default function Home() {
                     type="button"
                     onClick={() => {
                       if (
-                        isAuthenticated &&
-                        !isProUnlocked &&
-                        !Boolean(user?.freeTrialUsed) &&
-                        (user?.freeTrialCredits ?? 0) > 0
+                        freeTrialActive
                       ) {
                         alert(
                           "初回無料体験が残っています。もう一度「生成する」を押すと、全文を無料で表示できます。"
@@ -698,10 +706,7 @@ export default function Home() {
                       }
                       // 無料体験を使い切ったあとにプレミアム解除を試みた時のみ案内
                       if (
-                        isAuthenticated &&
-                        !isProUnlocked &&
-                        (Boolean(user?.freeTrialUsed) ||
-                          (user?.freeTrialCredits ?? 0) <= 0)
+                        isAuthenticated && !isProUnlocked && !freeTrialActive
                       ) {
                         setUpgradeOpen(true);
                         return;

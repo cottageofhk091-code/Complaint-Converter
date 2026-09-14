@@ -14,8 +14,8 @@ export default function Header() {
     user &&
     !isProUnlocked &&
     user.membershipType !== "paid" &&
-    (user.freeTrialCredits ?? 0) > 0
-      ? user.freeTrialCredits
+    !Boolean(user.freeTrialUsed)
+      ? Math.max(user.freeTrialCredits ?? 1, 1)
       : 0;
 
   return (

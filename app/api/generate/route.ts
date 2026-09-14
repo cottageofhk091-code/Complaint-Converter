@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   consumeFreeTrialCredit,
   fetchProfile,
+  resolveFreeTrialState,
 } from "@/lib/profiles";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -373,14 +374,16 @@ export async function POST(req: NextRequest) {
         } = await supabaseAuth.auth.getUser();
         if (authUser) {
           const profile = await fetchProfile(authUser.id, supabaseAuth);
+          const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
           if (profile?.membership_type === "paid") {
             entitledByMembership = true;
-          } else if (
-            !Boolean(profile?.free_trial_used) &&
-            (profile?.free_trial_credits ?? 0) > 0
-          ) {
-            shouldConsumeFreeTrial = true;
-            freeTrialCreditsRemaining = profile?.free_trial_credits ?? 0;
+          } else {
+            // a) paid 以外で free_trial_used===false（プロファイル欠落時はメタ/フォールバック）
+            const trial = resolveFreeTrialState(profile, meta);
+            if (trial.available) {
+              shouldConsumeFreeTrial = true;
+              freeTrialCreditsRemaining = trial.freeTrialCredits;
+            }
           }
         }
       } catch (trialErr) {
@@ -419,6 +422,11 @@ export async function POST(req: NextRequest) {
           usedFreeTrial = consumed.success;
           freeTrialCreditsRemaining = consumed.freeTrialCredits;
           unlockFull = consumed.success;
+          if (!consumed.success) {
+            console.error(
+              "[/api/generate] free trial eligible but consume failed; keeping paywall"
+            );
+          }
         } catch (consumeErr) {
           console.warn("[/api/generate] free trial consume error:", consumeErr);
           unlockFull = false;
