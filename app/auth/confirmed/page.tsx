@@ -74,6 +74,19 @@ function ConfirmedContent() {
         <div className="mt-8 flex flex-col gap-3">
           <button
             type="button"
+            onClick={() =>
+              router.push(
+                isAuthenticated || destination === "/"
+                  ? "/?trial=start"
+                  : `/login?next=${encodeURIComponent("/?trial=start")}`
+              )
+            }
+            className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:from-amber-400 hover:to-yellow-400"
+          >
+            今すぐ初回無料で試す
+          </button>
+          <button
+            type="button"
             onClick={() => router.push(destination)}
             className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-500 hover:to-cyan-500"
           >
@@ -87,7 +100,7 @@ function ConfirmedContent() {
             ダッシュボードへ進む
           </button>
           <p className="text-center text-xs text-slate-500">
-            ボタンを押すまでこの画面に留まります。
+            ボタンを押すまでこの画面に留まります。有料プラン案内は自動では開きません。
           </p>
           {!isAuthenticated && ready && (
             <Link

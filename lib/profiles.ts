@@ -346,7 +346,7 @@ export async function consumeFreeTrialCredit(
       updated_at: new Date().toISOString(),
     })
     .eq("id", user.id)
-    .gt("free_trial_credits", 0)
+    .eq("free_trial_used", false)
     .select("free_trial_credits, free_trial_used")
     .maybeSingle();
 

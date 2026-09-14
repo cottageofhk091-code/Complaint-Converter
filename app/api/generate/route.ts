@@ -375,7 +375,10 @@ export async function POST(req: NextRequest) {
           const profile = await fetchProfile(authUser.id, supabaseAuth);
           if (profile?.membership_type === "paid") {
             entitledByMembership = true;
-          } else if ((profile?.free_trial_credits ?? 0) > 0) {
+          } else if (
+            !Boolean(profile?.free_trial_used) &&
+            (profile?.free_trial_credits ?? 0) > 0
+          ) {
             shouldConsumeFreeTrial = true;
             freeTrialCreditsRemaining = profile?.free_trial_credits ?? 0;
           }

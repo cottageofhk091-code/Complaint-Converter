@@ -220,6 +220,15 @@ export default function Home() {
   const unlockToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 決済完了・キャンセルの通知（dashboard / pricing からの戻り含む）
+    // 登録完了画面からの「初回無料で試す」導線
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("trial") !== "start") return;
+    window.history.replaceState({}, "", window.location.pathname);
+    const form = document.getElementById("generate-form");
+    form?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment") === "success") {
@@ -362,16 +371,9 @@ export default function Home() {
         throw new Error(data.error || "生成に失敗しました。");
       }
       setResult(data as GenerateResult);
+      // 生成完了後は結果画面に留まる（有料案内の自動表示・リダイレクトはしない）
       if (data.usedFreeTrial) {
         await refreshProfile();
-      }
-      if (
-        data.paywalled &&
-        isAuthenticated &&
-        !isProUnlocked &&
-        !((user?.freeTrialCredits ?? 0) > 0)
-      ) {
-        setUpgradeOpen(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "予期しないエラーです。");
@@ -446,6 +448,7 @@ export default function Home() {
         )}
 
       <form
+        id="generate-form"
         onSubmit={handleSubmit}
         className="space-y-6 rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 shadow-xl shadow-black/20 backdrop-blur sm:p-7 animate-fade-up"
         style={{ animationDelay: "60ms" }}
@@ -685,7 +688,20 @@ export default function Home() {
                       if (
                         isAuthenticated &&
                         !isProUnlocked &&
-                        (user?.freeTrialCredits ?? 0) <= 0
+                        !Boolean(user?.freeTrialUsed) &&
+                        (user?.freeTrialCredits ?? 0) > 0
+                      ) {
+                        alert(
+                          "初回無料体験が残っています。もう一度「生成する」を押すと、全文を無料で表示できます。"
+                        );
+                        return;
+                      }
+                      // 無料体験を使い切ったあとにプレミアム解除を試みた時のみ案内
+                      if (
+                        isAuthenticated &&
+                        !isProUnlocked &&
+                        (Boolean(user?.freeTrialUsed) ||
+                          (user?.freeTrialCredits ?? 0) <= 0)
                       ) {
                         setUpgradeOpen(true);
                         return;
