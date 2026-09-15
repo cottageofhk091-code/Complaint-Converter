@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   },
   description: APP_DESCRIPTION,
   applicationName: APP_NAME,
+  // public/ の安定URL + app/favicon.ico・app/icon.png（Next.js ファイル規約）を併用。
+  // Vercel ダッシュボードは主に /favicon.ico を参照する。
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
