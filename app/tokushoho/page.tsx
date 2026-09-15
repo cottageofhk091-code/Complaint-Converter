@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 const SELLER = {
   name: "Nomad Flow Lab",
   operator: "Hiroki matsushita",
-  email: "support@example.com",
+  email: "support@cloudflowriver.com",
   address: "請求があった場合に遅滞なく開示します",
   phone: "請求があった場合に遅滞なく開示します",
 } as const;

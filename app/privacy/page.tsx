@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPageShell title="プライバシーポリシー" updatedAt="2026年8月5日">
+    <LegalPageShell title="プライバシーポリシー" updatedAt="2026年9月15日">
       <LegalSection title="1. 基本方針">
         <p>
           「Smartお詫びコンシェルジュ」（以下「本サービス」）の運営者（以下「当方」）は、利用者の個人情報および入力データの取扱いについて、本プライバシーポリシーに従い適切に保護します。
@@ -21,6 +21,10 @@ export default function PrivacyPage() {
           <li>
             <strong className="font-medium text-slate-200">入力本文・設定情報</strong>
             ：状況説明、メール本文、過失状況、対応方針、トーン選択等、生成のために送信される内容
+          </li>
+          <li>
+            <strong className="font-medium text-slate-200">生成履歴データ</strong>
+            ：有料プラン（PRO）機能として提供するマイページ保存機能のため、生成されたお詫び文章、推奨件名案、二次炎上防止メモ等の最新5件のデータ
           </li>
           <li>
             <strong className="font-medium text-slate-200">利用ログ</strong>
@@ -43,6 +47,7 @@ export default function PrivacyPage() {
       <LegalSection title="3. 利用目的">
         <ul className="list-disc space-y-2 pl-5">
           <li>本サービスの提供、維持、改善（返信メール案の生成を含む）</li>
+          <li>マイページにおける生成履歴（最大5件）の保管および表示機能の提供</li>
           <li>
             AI精度向上のための匿名化・統計的分析（個人を特定できない形での利用）
           </li>
