@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Providers from "@/components/Providers";
+import VisitTracker from "@/components/VisitTracker";
 import "./globals.css";
 
 const APP_NAME = "Smartお詫びコンシェルジュ";
@@ -52,6 +53,7 @@ export default function RootLayout({
     <html lang="ja">
       <body className="flex min-h-screen flex-col antialiased">
         <Providers>
+          <VisitTracker />
           <Header />
           <div className="flex-1">{children}</div>
           <Footer />
