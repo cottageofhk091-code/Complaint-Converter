@@ -70,7 +70,14 @@ export async function POST(req: Request) {
   }
 
   const origin = siteOrigin(req);
-  const redirectTo = `${origin}/auth/callback?type=recovery&next=${encodeURIComponent("/auth/password-reset-notice")}`;
+  // 必ず type: 'recovery'。成功後はパスワード入力画面へ誘導する。
+  const redirectTo = `${origin}/auth/callback?type=recovery&next=${encodeURIComponent("/auth/update-password")}`;
+
+  console.info("[api/auth/forgot-password] generateLink", {
+    type: "recovery",
+    redirectTo,
+    origin,
+  });
 
   const { data: linkData, error: linkError } =
     await admin.auth.admin.generateLink({
@@ -96,6 +103,7 @@ export async function POST(req: Request) {
     hashed_token?: string;
     action_link?: string;
     redirect_to?: string;
+    verification_type?: string;
   };
   const tokenHash = props.hashed_token;
   if (!tokenHash) {
@@ -106,10 +114,19 @@ export async function POST(req: Request) {
     );
   }
 
-  const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent("/auth/password-reset-notice")}`;
-  console.info("[api/auth/forgot-password] resetUrl host", {
+  if (props.verification_type && props.verification_type !== "recovery") {
+    console.error("[api/auth/forgot-password] unexpected verification_type", {
+      verification_type: props.verification_type,
+    });
+  }
+
+  const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent("/auth/update-password")}`;
+  console.info("[api/auth/forgot-password] resetUrl", {
     host: new URL(resetUrl).host,
+    type: "recovery",
+    next: "/auth/update-password",
     supabaseRedirectTo: props.redirect_to || null,
+    verification_type: props.verification_type || null,
   });
 
   const mail = buildRecoveryEmail(resetUrl);

@@ -13,10 +13,10 @@ export const AUTH_CONFIRMED_PATH = "/auth/confirmed";
 
 /**
  * パスワード再設定メール用 redirectTo。
- * メールタブでは案内ページへ。元タブは PASSWORD_RECOVERY を検知してモーダル表示。
+ * コールバック後は /auth/update-password で新パスワードを入力する。
  */
 export function getPasswordRecoveryRedirectTo(origin: string): string {
   const base = origin.replace(/\/$/, "");
-  const next = encodeURIComponent(PASSWORD_RESET_NOTICE_PATH);
+  const next = encodeURIComponent(PASSWORD_UPDATE_PATH);
   return `${base}${AUTH_CALLBACK_PATH}?type=recovery&next=${next}`;
 }

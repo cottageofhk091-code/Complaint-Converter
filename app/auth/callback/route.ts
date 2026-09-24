@@ -83,9 +83,12 @@ export async function GET(request: NextRequest) {
     nextPath.startsWith(PASSWORD_RESET_NOTICE_PATH) ||
     nextPath.startsWith(PASSWORD_UPDATE_PATH);
 
+  // recovery 成功後はパスワード入力画面へ（案内ページではない）
   const successPath = isRecovery
-    ? PASSWORD_RESET_NOTICE_PATH
+    ? PASSWORD_UPDATE_PATH
     : AUTH_CONFIRMED_PATH;
+
+  console.info("[auth/callback] resolved", { isRecovery, successPath, type });
 
   if (!isSupabaseConfigured()) {
     console.error("[auth/callback] Supabase not configured");
