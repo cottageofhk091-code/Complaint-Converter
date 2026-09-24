@@ -48,14 +48,18 @@ export function resolveFreeTrialState(
   }
 
   if (profile) {
-    // free_trial_used が false / null なら未消費
+    // free_trial_used が false / null なら、クレジット残数で可否を判定
     const hasCreditsColumn = profile.free_trial_credits != null;
     const credits = hasCreditsColumn
       ? normalizeCredits(profile.free_trial_credits)
-      : 1;
+      : INITIAL_FREE_TRIAL_CREDITS;
+    // 残 0 は消費済み扱い（再ログインで「残り1回」に戻さない）
+    if (credits <= 0) {
+      return { available: false, freeTrialCredits: 0, freeTrialUsed: true };
+    }
     return {
       available: true,
-      freeTrialCredits: Math.max(credits > 0 ? credits : 1, 1),
+      freeTrialCredits: credits,
       freeTrialUsed: false,
     };
   }

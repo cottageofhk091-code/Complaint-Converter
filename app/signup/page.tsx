@@ -58,7 +58,7 @@ export default function SignupPage() {
 
       if (result.needsEmailConfirmation) {
         setInfo(
-          "確認メールを送信しました。メール内のリンクから認証を完了してください。認証完了後、有料プラン1回無料チケットが付与されます。"
+          "確認メールを送信しました。メール内のリンクを開いたあと、この画面（タブ）に戻ってお続けください。認証完了後、有料プラン機能を1回無料でお試しいただけます。"
         );
       } else {
         router.push("/mypage");

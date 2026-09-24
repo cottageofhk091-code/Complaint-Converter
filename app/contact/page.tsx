@@ -1,5 +1,6 @@
 "use client";
 
+import { toJapaneseApiError, toJapaneseAuthError } from "@/lib/auth-errors";
 import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
 
@@ -42,7 +43,9 @@ export default function ContactPage() {
     });
 
     if (!res.ok) {
-      throw new Error(data.error || `送信に失敗しました（HTTP ${res.status}）`);
+      throw new Error(
+        toJapaneseApiError(data, `送信に失敗しました（HTTP ${res.status}）`)
+      );
     }
 
     return data;
@@ -85,9 +88,7 @@ export default function ContactPage() {
         formEl?.reset();
       } catch (err) {
         console.log("[contact] failed", err);
-        setError(
-          err instanceof Error ? err.message : "送信中にエラーが発生しました。"
-        );
+        setError(toJapaneseAuthError(err));
       } finally {
         sendingRef.current = false;
         setSubmitting(false);

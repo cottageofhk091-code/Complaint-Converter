@@ -17,6 +17,7 @@ import CopyButton from "@/components/CopyButton";
 import PricingModal from "@/components/PricingModal";
 import { useAuth } from "@/components/AuthProvider";
 import { pushGenerationHistory } from "@/lib/generation-history";
+import { toJapaneseApiError } from "@/lib/auth-errors";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 type FaultLevel =
@@ -289,14 +290,25 @@ export default function Home() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "生成に失敗しました。");
+        throw new Error(
+          toJapaneseApiError(data, "生成に失敗しました。時間をおいて再度お試しください。")
+        );
       }
       const next = data as GenerateResult;
       setResult(next);
 
       if (data.usedFreeTrial || data.freeTrialUsed) {
         markFreeTrialConsumed();
-        await refreshProfile();
+        // DB 反映後の再読込（失敗しても UI は消費済みのまま）
+        void refreshProfile();
+      } else if (
+        next.paywalled &&
+        isAuthenticated &&
+        !isProUnlocked &&
+        !Boolean(user?.freeTrialUsed)
+      ) {
+        // 残クレジット0で再生成された場合も即座に無料枠消化状態へ
+        markFreeTrialConsumed();
       }
 
       // 有料会員のみ履歴へ自動保存（最大5件・FIFO）。全文が無い場合はプレビューを保存
@@ -328,7 +340,8 @@ export default function Home() {
   const freeTrialActive =
     Boolean(isAuthenticated) &&
     !isProUnlocked &&
-    !Boolean(user?.freeTrialUsed);
+    !Boolean(user?.freeTrialUsed) &&
+    (user?.freeTrialCredits ?? 0) > 0;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">

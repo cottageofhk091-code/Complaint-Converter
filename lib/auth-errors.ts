@@ -1,6 +1,6 @@
 /**
  * Supabase Auth など認証系エラーメッセージの日本語変換。
- * 画面表示前に必ずこの関数を通す。
+ * 画面表示前に必ずこの関数（または authErrorTranslator）を通す。
  */
 
 const EXACT_MAP: Record<string, string> = {
@@ -12,6 +12,7 @@ const EXACT_MAP: Record<string, string> = {
   "A user with this email address has already been registered":
     "このメールアドレスは既に登録されています。",
   user_already_exists: "このメールアドレスは既に登録されています。",
+  email_exists: "このメールアドレスは既に登録されています。",
   "Password should be at least 6 characters":
     "パスワードは6文字以上で入力してください。",
   "Password should be at least 8 characters":
@@ -44,6 +45,8 @@ const EXACT_MAP: Record<string, string> = {
     "認証コードが無効か、有効期限が切れています。",
   over_email_send_rate_limit:
     "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
+  "Database error saving new user":
+    "ユーザーの登録処理でエラーが発生しました。時間をおいて再度お試しください。",
 };
 
 const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
@@ -57,7 +60,7 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
       "メールアドレスの確認が完了していません。届いたメールをご確認ください。",
   },
   {
-    test: /already (been )?registered|user already exists|already exists|user_already_exists|email address has already been/i,
+    test: /already (been )?registered|user already exists|already exists|user_already_exists|email address has already been|email_exists/i,
     message: "このメールアドレスは既に登録されています。",
   },
   {
@@ -92,6 +95,11 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
     message:
       "通信エラーが発生しました。ネットワーク接続を確認して再度お試しください。",
   },
+  {
+    test: /database error|service.?role/i,
+    message:
+      "サーバー側の認証設定エラーです。管理者にお問い合わせください。",
+  },
 ];
 
 const FALLBACK =
@@ -100,7 +108,7 @@ const FALLBACK =
 const DUPLICATE_MESSAGE = "このメールアドレスは既に登録されています。";
 
 /**
- * Supabase Auth / 一般 Error を画面表示用の日本語に変換する。
+ * Supabase Auth / API / 一般 Error を画面表示用の日本語に変換する。
  */
 export function toJapaneseAuthError(error: unknown): string {
   const code =
@@ -121,7 +129,9 @@ export function toJapaneseAuthError(error: unknown): string {
       ? error
       : error && typeof error === "object" && "message" in error
         ? String((error as { message?: unknown }).message ?? "")
-        : "";
+        : error && typeof error === "object" && "error" in error
+          ? String((error as { error?: unknown }).error ?? "")
+          : "";
 
   const message = raw.trim();
   if (!message) return FALLBACK;
@@ -142,4 +152,23 @@ export function toJapaneseAuthError(error: unknown): string {
 
   console.error("[auth-errors] unmapped error:", { message, code, error });
   return FALLBACK;
+}
+
+/** 仕様名 alias */
+export const authErrorTranslator = toJapaneseAuthError;
+
+/**
+ * API レスポンス JSON から画面用日本語エラーを作る。
+ */
+export function toJapaneseApiError(data: unknown, fallback?: string): string {
+  if (!data || typeof data !== "object") {
+    return fallback || FALLBACK;
+  }
+  const obj = data as { error?: unknown; detail?: unknown; message?: unknown };
+  if (obj.detail) {
+    console.error("[api-error] detail:", obj.detail);
+  }
+  const primary = obj.error ?? obj.message;
+  if (primary == null) return fallback || FALLBACK;
+  return toJapaneseAuthError(primary);
 }

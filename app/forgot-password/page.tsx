@@ -1,26 +1,20 @@
 "use client";
 
-import { toJapaneseAuthError } from "@/lib/auth-errors";
-import { getPasswordRecoveryRedirectTo } from "@/lib/auth-redirects";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { toJapaneseApiError, toJapaneseAuthError } from "@/lib/auth-errors";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setInfo(null);
 
-    if (!isSupabaseConfigured() || !supabase) {
-      setError("Supabase が未設定です。");
-      return;
-    }
     if (!email.trim()) {
       setError("メールアドレスを入力してください。");
       return;
@@ -28,20 +22,20 @@ export default function ForgotPasswordPage() {
 
     setSubmitting(true);
     try {
-      // redirectTo は Dashboard の Redirect URLs に /auth/callback を登録すること。
-      // 日本語メール件名・本文は Dashboard の Recovery テンプレ側。
-      // token_hash テンプレでも ConfirmationURL フォールバックでも、
-      // type=recovery 付き callback へ揃える。
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email.trim().toLowerCase(),
-        {
-          redirectTo: getPasswordRecoveryRedirectTo(window.location.origin),
-        }
-      );
-      if (resetError) throw resetError;
-      setInfo(
-        "パスワード再設定用のメールを送信しました。メール内のリンクから手続きを続けてください。"
-      );
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        throw new Error(toJapaneseApiError(data));
+      }
+      router.push("/auth/password-reset-notice?sent=1");
     } catch (err) {
       setError(toJapaneseAuthError(err));
     } finally {
@@ -90,11 +84,6 @@ export default function ForgotPasswordPage() {
           {error && (
             <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {error}
-            </p>
-          )}
-          {info && (
-            <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-              {info}
             </p>
           )}
 

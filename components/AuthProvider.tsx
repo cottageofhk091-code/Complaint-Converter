@@ -16,7 +16,6 @@ import {
   markProfilePaid,
   profileToAuthUser,
   upsertProfileForUser,
-  type SurveyInput,
 } from "@/lib/profiles";
 import {
   getProSessionIdFromStorage,
@@ -67,6 +66,12 @@ type AuthContextValue = {
   isDevPaidOverride: boolean | null;
   /** 開発環境のみ: モックログイン中か */
   isDevMockAuth: boolean;
+  /** メール確認完了後のウェルカム表示 */
+  welcomeMessage: string | null;
+  clearWelcomeMessage: () => void;
+  /** パスワード再設定フロー（元タブ側モーダル） */
+  passwordRecoveryOpen: boolean;
+  closePasswordRecovery: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -120,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [devPaidOverride, setDevPaidOverride] = useState<boolean | null>(null);
   const [devMockAuth, setDevMockAuth] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+  const [passwordRecoveryOpen, setPasswordRecoveryOpen] = useState(false);
   const supabaseReady = isSupabaseConfigured();
 
   useEffect(() => {
@@ -267,13 +274,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setPasswordRecoveryOpen(true);
+      }
+      if (event === "SIGNED_IN") {
+        try {
+          if (sessionStorage.getItem("awaiting_email_confirm") === "1") {
+            sessionStorage.removeItem("awaiting_email_confirm");
+            setWelcomeMessage(
+              "会員登録が完了しました。スマートお詫びコンシェルジュへようこそ。初回は有料プラン機能を1回無料でお試しいただけます。"
+            );
+          }
+        } catch {
+          // ignore
+        }
+      }
       void syncFromSession(nextSession);
+    });
+
+    const client = supabase;
+    const onFocus = () => {
+      void client.auth.getSession().then(({ data }) => {
+        void syncFromSession(data.session);
+      });
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") onFocus();
     });
 
     return () => {
       cancelled = true;
       subscription.unsubscribe();
+      window.removeEventListener("focus", onFocus);
     };
   }, [syncFromSession]);
 
@@ -309,104 +343,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      const email = input.email.trim().toLowerCase();
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "";
-
-      const survey: SurveyInput = {
-        displayName: input.displayName,
-        ageGroup: input.ageGroup,
-        region: input.region,
-        membershipType: "free",
-      };
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password: input.password,
-        options: {
-          emailRedirectTo: `${origin}/auth/callback`,
-          data: {
-            display_name: input.displayName?.trim() || "",
-            age_group: input.ageGroup,
-            region: input.region,
-            app_name: "apology",
-            free_trial_credits: 1,
-            free_trial_used: false,
-          },
-        },
-      });
-
-      if (error) {
-        console.error("[auth] signUp failed:", {
-          message: error.message,
-          status: error.status,
-          code: (error as { code?: string }).code,
-          name: error.name,
-        });
-        throw new Error(toJapaneseAuthError(error));
-      }
-
-      // Supabase: 既存ユーザーへの再登録は error 無しで identities 空配列を返すことがある
-      if (
-        data.user &&
-        Array.isArray(data.user.identities) &&
-        data.user.identities.length === 0
-      ) {
-        console.error(
-          "[auth] signUp duplicate detected (empty identities):",
-          { userId: data.user.id, email }
-        );
-        throw new Error("このメールアドレスは既に登録されています。");
-      }
-
-      // プロファイル作成失敗でも Auth 登録自体は成功扱い（無料枠は callback で再試行）
-      if (data.user) {
-        try {
-          const profile = await upsertProfileForUser(data.user.id, email, survey);
-          if (!profile) {
-            console.warn(
-              "[auth] profile upsert returned null after signUp; Auth user created",
-              { userId: data.user.id }
-            );
-          }
-        } catch (err) {
-          console.error(
-            "[auth] profile upsert after signUp failed (Auth OK):",
-            err
-          );
-        }
-      }
-
-      if (data.user && data.session) {
-        await syncFromSession(data.session);
-        return { needsEmailConfirmation: false };
-      }
-
-      // 開発環境: Confirm Email でセッションが無い場合はモックで続行
-      if (IS_DEV && data.user && !data.session) {
-        const mock: AuthUser = {
-          ...DEV_MOCK_USER,
-          id: data.user.id,
-          email: data.user.email || email,
-          name:
-            input.displayName?.trim() ||
-            displayNameFromUser(data.user),
+      // Resend 経由の確認メール（Supabase 標準メールは送らない）
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: input.email.trim(),
+          password: input.password,
+          displayName: input.displayName?.trim() || undefined,
           ageGroup: input.ageGroup,
           region: input.region,
-        };
-        writeDevMockUser(mock);
-        setUser(mock);
-        setDevMockAuth(true);
-        return { needsEmailConfirmation: false };
+        }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: string;
+        needsEmailConfirmation?: boolean;
+        success?: boolean;
+      };
+
+      if (!res.ok) {
+        console.error("[auth] register API failed:", {
+          status: res.status,
+          error: data.error,
+          detail: data.detail,
+        });
+        throw new Error(toJapaneseAuthError(data.error || data));
       }
 
-      if (data.user && !data.session) {
-        return { needsEmailConfirmation: true };
+      try {
+        sessionStorage.setItem("awaiting_email_confirm", "1");
+      } catch {
+        // ignore
       }
 
-      return { needsEmailConfirmation: !data.session };
+      return {
+        needsEmailConfirmation: data.needsEmailConfirmation !== false,
+      };
     },
-    [syncFromSession]
+    []
   );
 
   const signIn = useCallback(
@@ -590,6 +566,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     notifyProChanged();
   }, [proSessionId, user?.membershipType, user?.plan]);
 
+  const clearWelcomeMessage = useCallback(() => {
+    setWelcomeMessage(null);
+  }, []);
+
+  const closePasswordRecovery = useCallback(() => {
+    setPasswordRecoveryOpen(false);
+  }, []);
+
   const displayUser = useMemo(() => {
     if (!user) return null;
     if (!IS_DEV || devPaidOverride === null) return user;
@@ -633,6 +617,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       toggleDevPaidPlan,
       isDevPaidOverride: IS_DEV ? devPaidOverride : null,
       isDevMockAuth: IS_DEV && devMockAuth,
+      welcomeMessage,
+      clearWelcomeMessage,
+      passwordRecoveryOpen,
+      closePasswordRecovery,
     }),
     [
       displayUser,
@@ -653,6 +641,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       markFreeTrialConsumed,
       toggleDevPaidPlan,
       devPaidOverride,
+      welcomeMessage,
+      clearWelcomeMessage,
+      passwordRecoveryOpen,
+      closePasswordRecovery,
     ]
   );
 

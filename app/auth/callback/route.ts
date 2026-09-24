@@ -1,4 +1,8 @@
-import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
+import {
+  AUTH_CONFIRMED_PATH,
+  PASSWORD_RESET_NOTICE_PATH,
+  PASSWORD_UPDATE_PATH,
+} from "@/lib/auth-redirects";
 import { ensureFreeTrialGranted } from "@/lib/profiles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -6,8 +10,9 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * メール確認・マジックリンク・パスワード再設定のコールバック。
- * recovery は /auth/update-password へ。それ以外は歓迎画面へ。
+ * メール確認・パスワード再設定のコールバック。
+ * - signup: 案内ページ（元タブへ戻る旨）
+ * - recovery: 案内ページ（元タブでパスワード変更モーダル）
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -20,29 +25,22 @@ export async function GET(request: NextRequest) {
       ? nextRaw
       : "/";
 
-  const welcome = (next: string) =>
-    NextResponse.redirect(
-      `${origin}/auth/confirmed?next=${encodeURIComponent(next)}`
-    );
+  const toConfirmed = () =>
+    NextResponse.redirect(`${origin}${AUTH_CONFIRMED_PATH}`);
 
-  const toUpdatePassword = () =>
-    NextResponse.redirect(`${origin}${PASSWORD_UPDATE_PATH}`);
+  const toRecoveryNotice = () =>
+    NextResponse.redirect(`${origin}${PASSWORD_RESET_NOTICE_PATH}`);
 
-  /** パスワード再設定は歓迎画面ではなく設定画面へ */
   const afterAuthSuccess = (resolvedType: EmailOtpType | null | undefined) => {
     if (resolvedType === "recovery") {
-      const dest =
-        nextPath.startsWith(PASSWORD_UPDATE_PATH) || nextPath === "/"
-          ? PASSWORD_UPDATE_PATH
-          : nextPath;
-      return NextResponse.redirect(`${origin}${dest}`);
+      return toRecoveryNotice();
     }
-    return welcome(nextPath === "/mypage" ? "/" : nextPath);
+    return toConfirmed();
   };
 
   if (!isSupabaseConfigured()) {
-    console.warn("[auth/callback] Supabase not configured — welcome redirect");
-    return welcome("/login");
+    console.warn("[auth/callback] Supabase not configured");
+    return type === "recovery" ? toRecoveryNotice() : toConfirmed();
   }
 
   try {
@@ -56,22 +54,18 @@ export async function GET(request: NextRequest) {
       if (!error) {
         try {
           const { data: userData } = await supabase.auth.getUser();
-          if (userData.user) {
+          if (userData.user && type !== "recovery") {
             await ensureFreeTrialGranted(userData.user.id, supabase);
           }
         } catch (grantErr) {
           console.warn("[auth/callback] free trial grant skipped:", grantErr);
         }
-
         return afterAuthSuccess(type);
       }
-      console.warn(
-        "[auth/callback] verifyOtp failed, welcome anyway:",
-        error.message
-      );
+      console.warn("[auth/callback] verifyOtp failed:", error.message);
       return type === "recovery"
         ? NextResponse.redirect(`${origin}/forgot-password`)
-        : welcome("/login");
+        : NextResponse.redirect(`${origin}/login`);
     }
 
     if (code) {
@@ -79,43 +73,44 @@ export async function GET(request: NextRequest) {
       if (!error) {
         try {
           const { data: userData } = await supabase.auth.getUser();
-          if (userData.user) {
+          const isRecovery =
+            type === "recovery" ||
+            nextPath.startsWith(PASSWORD_RESET_NOTICE_PATH) ||
+            nextPath.startsWith(PASSWORD_UPDATE_PATH);
+          if (userData.user && !isRecovery) {
             await ensureFreeTrialGranted(userData.user.id, supabase);
           }
+          if (isRecovery) return toRecoveryNotice();
         } catch (grantErr) {
           console.warn("[auth/callback] free trial grant skipped:", grantErr);
         }
-
-        // ConfirmationURL / PKCE: redirectTo に載せた type=recovery を優先
-        if (
-          type === "recovery" ||
-          nextPath.startsWith(PASSWORD_UPDATE_PATH)
-        ) {
-          return toUpdatePassword();
-        }
-        return welcome(nextPath === "/mypage" ? "/" : nextPath);
+        return toConfirmed();
       }
       console.warn(
-        "[auth/callback] exchangeCodeForSession failed, welcome anyway:",
+        "[auth/callback] exchangeCodeForSession failed:",
         error.message
       );
       return type === "recovery"
         ? NextResponse.redirect(`${origin}/forgot-password`)
-        : welcome("/login");
+        : NextResponse.redirect(`${origin}/login`);
     }
 
     const { data } = await supabase.auth.getSession();
     if (data.session) {
-      if (type === "recovery" || nextPath.startsWith(PASSWORD_UPDATE_PATH)) {
-        return toUpdatePassword();
+      if (
+        type === "recovery" ||
+        nextPath.startsWith(PASSWORD_RESET_NOTICE_PATH) ||
+        nextPath.startsWith(PASSWORD_UPDATE_PATH)
+      ) {
+        return toRecoveryNotice();
       }
-      return welcome("/");
+      return toConfirmed();
     }
   } catch (err) {
-    console.warn("[auth/callback] unexpected error, welcome redirect:", err);
+    console.warn("[auth/callback] unexpected error:", err);
   }
 
   return type === "recovery"
     ? NextResponse.redirect(`${origin}/forgot-password`)
-    : welcome("/login");
+    : NextResponse.redirect(`${origin}/login`);
 }

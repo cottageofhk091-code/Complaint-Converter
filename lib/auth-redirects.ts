@@ -7,14 +7,16 @@
  */
 
 export const PASSWORD_UPDATE_PATH = "/auth/update-password";
+export const PASSWORD_RESET_NOTICE_PATH = "/auth/password-reset-notice";
 export const AUTH_CALLBACK_PATH = "/auth/callback";
+export const AUTH_CONFIRMED_PATH = "/auth/confirmed";
 
 /**
  * パスワード再設定メール用 redirectTo。
- * `/auth/callback?type=recovery`（必要なら next 付き）
+ * メールタブでは案内ページへ。元タブは PASSWORD_RECOVERY を検知してモーダル表示。
  */
 export function getPasswordRecoveryRedirectTo(origin: string): string {
   const base = origin.replace(/\/$/, "");
-  const next = encodeURIComponent(PASSWORD_UPDATE_PATH);
+  const next = encodeURIComponent(PASSWORD_RESET_NOTICE_PATH);
   return `${base}${AUTH_CALLBACK_PATH}?type=recovery&next=${next}`;
 }

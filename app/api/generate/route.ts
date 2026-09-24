@@ -322,10 +322,12 @@ export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === "your_gemini_api_key_here") {
+      console.error("[/api/generate] GEMINI_API_KEY missing");
       return NextResponse.json(
         {
-          error:
-            "GEMINI_API_KEY が設定されていません。.env.local を確認してください。",
+          error: "文章生成の設定が完了していません。",
+          detail:
+            "GEMINI_API_KEY が未設定です。Vercel / .env.local の環境変数を確認してください。",
         },
         { status: 503 }
       );
@@ -422,10 +424,15 @@ export async function POST(req: NextRequest) {
         buildUserPrompt(body)
       ));
     } catch (genErr) {
+      const detail = errorText(genErr);
       console.error("[/api/generate] all interaction attempts failed:", genErr);
-      console.error("[/api/generate] detail:", errorText(genErr));
+      console.error("[/api/generate] detail:", detail);
       return NextResponse.json(
-        { error: errorText(genErr) },
+        {
+          error:
+            "文章の生成に失敗しました。時間をおいて再度お試しください。",
+          detail,
+        },
         { status: 502 }
       );
     }
@@ -517,6 +524,9 @@ export async function POST(req: NextRequest) {
     console.error("[/api/generate] unhandled error:", err);
     console.error("[/api/generate] unhandled detail:", errorText(err));
     const { error, status } = toUserFacingError(err);
-    return NextResponse.json({ error }, { status });
+    return NextResponse.json(
+      { error, detail: errorText(err) },
+      { status }
+    );
   }
 }
