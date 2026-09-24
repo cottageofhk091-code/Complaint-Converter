@@ -57,7 +57,7 @@ export function buildRecoveryEmail(resetUrl: string): {
 } {
   const text = [
     "スマートお詫びコンシェルジュのパスワード再設定リクエストを受け付けました。",
-    "以下のリンクをクリックして、新しいパスワードを設定してください。",
+    "以下のリンクをクリックして準備を完了し、元の画面（タブ）で新しいパスワードを設定してください。",
     "",
     resetUrl,
     "",
@@ -68,7 +68,7 @@ export function buildRecoveryEmail(resetUrl: string): {
     <div style="font-family:sans-serif;line-height:1.7;color:#0f172a;max-width:560px;margin:0 auto">
       <h2 style="margin:0 0 12px;font-size:18px">パスワード再設定のご案内</h2>
       <p style="margin:0 0 12px">パスワード再設定のリクエストを受け付けました。</p>
-      <p style="margin:0 0 20px">以下のボタンをクリックすると、新しいパスワードの入力画面が開きます。</p>
+      <p style="margin:0 0 20px">以下のボタンをクリックすると準備が完了します。その後、元々開いていた画面（タブ）に戻って新しいパスワードを入力してください。</p>
       <p style="margin:0 0 20px">
         <a href="${escapeHtml(resetUrl)}"
            style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">
@@ -93,5 +93,5 @@ export const RECOVERY_EMAIL = {
   subject: RECOVERY_SUBJECT,
   bodyText: "",
   bodyHtmlHintPath: "supabase/templates/reset-password.html",
-  redirectToPath: "/?action=reset-password",
+  redirectToPath: "/auth/password-reset-notice",
 } as const;

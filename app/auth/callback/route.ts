@@ -1,7 +1,7 @@
 import {
   AUTH_CONFIRMED_PATH,
   isPasswordRecoveryPath,
-  PASSWORD_UPDATE_PATH,
+  PASSWORD_RESET_NOTICE_PATH,
 } from "@/lib/auth-redirects";
 import { ensureFreeTrialGranted } from "@/lib/profiles";
 import {
@@ -70,9 +70,13 @@ export async function GET(request: NextRequest) {
 
   if (oauthError) {
     console.error("[auth/callback] provider error:", oauthError);
+    const errPath =
+      type === "recovery" || isPasswordRecoveryPath(nextPath)
+        ? PASSWORD_RESET_NOTICE_PATH
+        : AUTH_CONFIRMED_PATH;
     return withError(
       origin,
-      AUTH_CONFIRMED_PATH,
+      errPath,
       "認証リンクの処理に失敗しました。",
       oauthError
     );
@@ -81,9 +85,9 @@ export async function GET(request: NextRequest) {
   const isRecovery =
     type === "recovery" || isPasswordRecoveryPath(nextPath);
 
-  // recovery 成功後はトップへ。クライアント側で再設定モーダルを開く
+  // recovery 成功後は案内ページへ。パスワード入力は元タブのモーダルで行う
   const successPath = isRecovery
-    ? PASSWORD_UPDATE_PATH
+    ? PASSWORD_RESET_NOTICE_PATH
     : AUTH_CONFIRMED_PATH;
 
   console.info("[auth/callback] resolved", { isRecovery, successPath, type });

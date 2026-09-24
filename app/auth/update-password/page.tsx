@@ -1,18 +1,18 @@
 "use client";
 
-import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
+import { PASSWORD_RESET_NOTICE_PATH } from "@/lib/auth-redirects";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 /**
  * 旧パスワード入力ページ。
- * メールリンク経由の互換のためトップ（再設定モーダル）へ転送する。
+ * メールリンク経由の互換のため案内ページへ転送（入力は元タブのモーダル）。
  */
 export default function UpdatePasswordPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace(PASSWORD_UPDATE_PATH);
+    router.replace(PASSWORD_RESET_NOTICE_PATH);
   }, [router]);
 
   return (

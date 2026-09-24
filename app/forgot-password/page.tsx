@@ -1,15 +1,15 @@
 "use client";
 
 import { toJapaneseApiError, toJapaneseAuthError } from "@/lib/auth-errors";
+import { markAwaitingPasswordRecovery } from "@/lib/auth-recovery-sync";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function ForgotPasswordPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,7 +35,9 @@ export default function ForgotPasswordPage() {
       if (!res.ok) {
         throw new Error(toJapaneseApiError(data));
       }
-      router.push("/auth/password-reset-notice?sent=1");
+      // このタブでモーダルを開くための待ち受け（メールは別タブで開く）
+      markAwaitingPasswordRecovery();
+      setSent(true);
     } catch (err) {
       setError(toJapaneseAuthError(err));
     } finally {
@@ -60,41 +62,66 @@ export default function ForgotPasswordPage() {
           パスワード再設定
         </p>
         <h1 className="text-2xl font-bold text-slate-50">パスワードをお忘れの方</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          登録済みのメールアドレス宛に、再設定用のリンクを送信します。
-        </p>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="mb-2 block text-sm text-slate-200">
-              メールアドレス
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-              {error}
+        {sent ? (
+          <div className="mt-6 space-y-3">
+            <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200">
+              登録済みのメールアドレスの場合、再設定用メールを送信しました。
             </p>
-          )}
+            <p className="text-sm leading-relaxed text-slate-300">
+              メール内のボタンを開くと準備が完了します。その後、
+              <strong className="font-semibold text-slate-100">この画面（タブ）</strong>
+              にパスワード設定画面が表示されます。
+            </p>
+            <p className="text-xs text-slate-500">
+              届かない場合は迷惑メールフォルダもご確認ください。このタブはそのまま開いたままにしてください。
+            </p>
+            <Link
+              href="/login"
+              className="mt-2 inline-flex rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            >
+              ログインへ戻る
+            </Link>
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-slate-400">
+              登録済みのメールアドレス宛に、再設定用のリンクを送信します。
+            </p>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
-          >
-            {submitting ? "送信中…" : "再設定メールを送る"}
-          </button>
-        </form>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="email" className="mb-2 block text-sm text-slate-200">
+                  メールアドレス
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                />
+              </div>
+
+              {error && (
+                <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+              >
+                {submitting ? "送信中…" : "再設定メールを送る"}
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </main>
   );

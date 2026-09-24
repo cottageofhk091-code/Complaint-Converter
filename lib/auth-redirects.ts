@@ -6,30 +6,34 @@
  * - カスタムテンプレの token_hash リンクと、ConfirmationURL 経由の両対応
  */
 
-/** パスワード再設定完了後の遷移先（トップ＋モーダル起動） */
-export const PASSWORD_RESET_ACTION = "reset-password";
-export const PASSWORD_UPDATE_PATH = `/?action=${PASSWORD_RESET_ACTION}`;
-
-/** 旧フロー互換 */
-export const LEGACY_PASSWORD_UPDATE_PATH = "/auth/update-password";
+/** パスワード再設定メール完了後の案内ページ（元タブでモーダル完結） */
 export const PASSWORD_RESET_NOTICE_PATH = "/auth/password-reset-notice";
+
+/** 旧フロー互換（トップでモーダル起動） */
+export const PASSWORD_RESET_ACTION = "reset-password";
+export const LEGACY_PASSWORD_HOME_PATH = `/?action=${PASSWORD_RESET_ACTION}`;
+export const LEGACY_PASSWORD_UPDATE_PATH = "/auth/update-password";
+
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 export const AUTH_CONFIRMED_PATH = "/auth/confirmed";
 
+/** recovery 成功後の遷移先（案内専用ページ） */
+export const PASSWORD_UPDATE_PATH = PASSWORD_RESET_NOTICE_PATH;
+
 export function isPasswordRecoveryPath(path: string): boolean {
   if (!path) return false;
-  if (path.startsWith(LEGACY_PASSWORD_UPDATE_PATH)) return true;
   if (path.startsWith(PASSWORD_RESET_NOTICE_PATH)) return true;
+  if (path.startsWith(LEGACY_PASSWORD_UPDATE_PATH)) return true;
   if (path.includes(`action=${PASSWORD_RESET_ACTION}`)) return true;
   return false;
 }
 
 /**
  * generateLink / メール用 redirectTo。
- * コールバック検証後はトップでパスワード再設定モーダルを開く。
+ * コールバック検証後は案内ページへ。パスワード入力は元タブのモーダルで行う。
  */
 export function getPasswordRecoveryRedirectTo(origin: string): string {
   const base = origin.replace(/\/$/, "");
-  return `${base}${PASSWORD_UPDATE_PATH}`;
+  return `${base}${PASSWORD_RESET_NOTICE_PATH}`;
 }
 

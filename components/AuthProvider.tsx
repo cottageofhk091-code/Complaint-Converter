@@ -4,6 +4,13 @@ import type { AuthUser } from "@/lib/auth";
 import { clearLegacyAuthStorage } from "@/lib/auth";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import {
+  clearAwaitingPasswordRecovery,
+  isAuthNoticePath,
+  isAwaitingPasswordRecovery,
+  PASSWORD_RECOVERY_CHANNEL,
+  PASSWORD_RECOVERY_READY_KEY,
+} from "@/lib/auth-recovery-sync";
+import {
   DEV_MOCK_USER,
   IS_DEV,
   readDevMockUser,
@@ -289,6 +296,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const tryOpenPasswordRecoveryModal = (reason: string) => {
+      if (typeof window !== "undefined" && isAuthNoticePath(window.location.pathname)) {
+        return;
+      }
+      console.info("[auth] open password recovery modal:", reason);
+      setPasswordRecoveryOpen(true);
+      void client.auth.getSession().then(({ data }) => {
+        void syncFromSession(data.session);
+      });
+    };
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -297,7 +315,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasSession: !!nextSession?.user,
       });
       if (event === "PASSWORD_RECOVERY") {
-        setPasswordRecoveryOpen(true);
+        tryOpenPasswordRecoveryModal("PASSWORD_RECOVERY");
+      }
+      // メール確認タブ側のセッション同期でも、待ち受け中なら元タブでモーダルを開く
+      if (
+        nextSession?.user &&
+        (event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED") &&
+        isAwaitingPasswordRecovery()
+      ) {
+        tryOpenPasswordRecoveryModal(`awaiting + ${event}`);
       }
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
         maybeWelcomeAfterConfirm(!!nextSession?.user);
@@ -311,18 +339,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           hasSession: !!data.session?.user,
         });
         maybeWelcomeAfterConfirm(!!data.session?.user);
+        if (data.session?.user && isAwaitingPasswordRecovery()) {
+          tryOpenPasswordRecoveryModal("focus + awaiting");
+        }
         void syncFromSession(data.session);
       });
     };
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", () => {
+    const onVisibility = () => {
       if (document.visibilityState === "visible") onFocus();
-    });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === PASSWORD_RECOVERY_READY_KEY && e.newValue) {
+        tryOpenPasswordRecoveryModal("storage sync");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel(PASSWORD_RECOVERY_CHANNEL);
+      bc.onmessage = (ev) => {
+        if (ev?.data?.type === "PASSWORD_RECOVERY_READY") {
+          tryOpenPasswordRecoveryModal("broadcast");
+        }
+      };
+    } catch {
+      // ignore
+    }
 
     return () => {
       cancelled = true;
       subscription.unsubscribe();
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("storage", onStorage);
+      try {
+        bc?.close();
+      } catch {
+        // ignore
+      }
     };
   }, [syncFromSession]);
 
@@ -598,6 +656,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const closePasswordRecovery = useCallback(() => {
     setPasswordRecoveryOpen(false);
+    clearAwaitingPasswordRecovery();
   }, []);
 
   const displayUser = useMemo(() => {
