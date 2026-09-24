@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { buildRecoveryEmail } from "@/lib/auth-mail";
+import {
+  getPasswordRecoveryRedirectTo,
+  PASSWORD_UPDATE_PATH,
+} from "@/lib/auth-redirects";
 import { sendResendEmail } from "@/lib/resend";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { createSupabaseServiceClient } from "@/lib/supabase/admin";
@@ -70,8 +74,8 @@ export async function POST(req: Request) {
   }
 
   const origin = siteOrigin(req);
-  // 必ず type: 'recovery'。成功後はパスワード入力画面へ誘導する。
-  const redirectTo = `${origin}/auth/callback?type=recovery&next=${encodeURIComponent("/auth/update-password")}`;
+  // type: 'recovery'。redirectTo はトップ（モーダル起動用クエリ付き）
+  const redirectTo = getPasswordRecoveryRedirectTo(origin);
 
   console.info("[api/auth/forgot-password] generateLink", {
     type: "recovery",
@@ -120,11 +124,12 @@ export async function POST(req: Request) {
     });
   }
 
-  const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent("/auth/update-password")}`;
+  // token_hash でセッション確立後、トップへリダイレクトしてモーダル表示
+  const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent(PASSWORD_UPDATE_PATH)}`;
   console.info("[api/auth/forgot-password] resetUrl", {
     host: new URL(resetUrl).host,
     type: "recovery",
-    next: "/auth/update-password",
+    next: PASSWORD_UPDATE_PATH,
     supabaseRedirectTo: props.redirect_to || null,
     verification_type: props.verification_type || null,
   });

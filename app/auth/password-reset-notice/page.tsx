@@ -3,10 +3,11 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
 
 /**
  * sent=1 … メール送信後の案内
- * それ以外（古いメールの next 先）… パスワード入力画面へ転送
+ * それ以外（古いメールの next 先）… トップへ転送して再設定モーダルを開く
  */
 function NoticeBody() {
   const router = useRouter();
@@ -15,7 +16,7 @@ function NoticeBody() {
 
   useEffect(() => {
     if (!sent) {
-      router.replace("/auth/update-password");
+      router.replace(PASSWORD_UPDATE_PATH);
     }
   }, [sent, router]);
 
@@ -37,7 +38,7 @@ function NoticeBody() {
           メールを送信しました
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-slate-300">
-          メール内の「パスワードを再設定する」ボタンを開くと、新しいパスワードの入力画面に進みます。
+          メール内の「パスワードを再設定する」ボタンを開くと、サイトのトップ画面で新しいパスワードの入力画面が表示されます。
         </p>
         <p className="mt-3 text-xs text-slate-500">
           届かない場合は迷惑メールフォルダもご確認ください。

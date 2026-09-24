@@ -69,8 +69,9 @@ type AuthContextValue = {
   /** メール確認完了後のウェルカム表示 */
   welcomeMessage: string | null;
   clearWelcomeMessage: () => void;
-  /** パスワード再設定フロー（元タブ側モーダル） */
+  /** パスワード再設定フロー（トップ上モーダル） */
   passwordRecoveryOpen: boolean;
+  openPasswordRecovery: () => void;
   closePasswordRecovery: () => void;
 };
 
@@ -591,6 +592,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setWelcomeMessage(null);
   }, []);
 
+  const openPasswordRecovery = useCallback(() => {
+    setPasswordRecoveryOpen(true);
+  }, []);
+
   const closePasswordRecovery = useCallback(() => {
     setPasswordRecoveryOpen(false);
   }, []);
@@ -641,6 +646,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       welcomeMessage,
       clearWelcomeMessage,
       passwordRecoveryOpen,
+      openPasswordRecovery,
       closePasswordRecovery,
     }),
     [
@@ -665,6 +671,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       welcomeMessage,
       clearWelcomeMessage,
       passwordRecoveryOpen,
+      openPasswordRecovery,
       closePasswordRecovery,
     ]
   );

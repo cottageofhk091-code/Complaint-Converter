@@ -70,8 +70,12 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
     message: "このメールアドレスは既に登録されています。",
   },
   {
+    test: /password should be at least\s*8/i,
+    message: "パスワードは8文字以上で入力してください。",
+  },
+  {
     test: /password should be at least/i,
-    message: "パスワードは6文字以上で入力してください。",
+    message: "パスワードは8文字以上で入力してください。",
   },
   {
     test: /rate limit|too many requests|over_email_send_rate_limit/i,

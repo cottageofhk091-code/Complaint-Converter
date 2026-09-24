@@ -1,142 +1,23 @@
 "use client";
 
-import { toJapaneseAuthError } from "@/lib/auth-errors";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { PASSWORD_UPDATE_PATH } from "@/lib/auth-redirects";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
+/**
+ * 旧パスワード入力ページ。
+ * メールリンク経由の互換のためトップ（再設定モーダル）へ転送する。
+ */
 export default function UpdatePasswordPage() {
   const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // メール内リンク経由でセッションが確立されるまで待つ
-    if (!supabase) {
-      setReady(true);
-      return;
-    }
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        setError(
-          "再設定セッションが見つかりません。メールのリンクから再度アクセスしてください。"
-        );
-      }
-      setReady(true);
-    });
-  }, []);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
-
-    if (!isSupabaseConfigured() || !supabase) {
-      setError("Supabase が未設定です。");
-      return;
-    }
-    if (password.length < 8) {
-      setError("パスワードは8文字以上にしてください。");
-      return;
-    }
-    if (password !== confirm) {
-      setError("確認用パスワードが一致しません。");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      });
-      if (updateError) throw updateError;
-      setInfo("パスワードを更新しました。ログイン画面へ移動します…");
-      setTimeout(() => router.push("/login"), 1200);
-    } catch (err) {
-      setError(toJapaneseAuthError(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    router.replace(PASSWORD_UPDATE_PATH);
+  }, [router]);
 
   return (
-    <main className="mx-auto max-w-md px-4 py-10 sm:px-6 sm:py-14">
-      <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 p-5 sm:p-7">
-        <p className="mb-2 text-xs font-medium tracking-[0.12em] text-blue-400/80">
-          パスワード再設定
-        </p>
-        <h1 className="text-2xl font-bold text-slate-50">新しいパスワードの設定</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          メール内のリンクから遷移後、新しいパスワードを設定してください。
-        </p>
-
-        {!ready ? (
-          <div className="mt-6 h-24 animate-pulse rounded-xl bg-slate-800/60" />
-        ) : (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            <div>
-              <label htmlFor="password" className="mb-2 block text-sm text-slate-200">
-                新しいパスワード（8文字以上）
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-                autoComplete="new-password"
-              />
-            </div>
-            <div>
-              <label htmlFor="confirm" className="mb-2 block text-sm text-slate-200">
-                パスワード（確認）
-              </label>
-              <input
-                id="confirm"
-                type="password"
-                required
-                minLength={8}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-                autoComplete="new-password"
-              />
-            </div>
-
-            {error && (
-              <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                {error}
-              </p>
-            )}
-            {info && (
-              <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-                {info}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
-            >
-              {submitting ? "更新中…" : "パスワードを更新する"}
-            </button>
-          </form>
-        )}
-
-        <p className="mt-5 text-center text-xs text-slate-500">
-          <Link href="/login" className="text-blue-400 hover:underline">
-            ログインへ戻る
-          </Link>
-        </p>
-      </div>
+    <main className="mx-auto flex min-h-[50vh] max-w-lg items-center px-4 py-14">
+      <div className="h-40 w-full animate-pulse rounded-2xl bg-slate-800/60" />
     </main>
   );
 }

@@ -1,6 +1,6 @@
 import {
   AUTH_CONFIRMED_PATH,
-  PASSWORD_RESET_NOTICE_PATH,
+  isPasswordRecoveryPath,
   PASSWORD_UPDATE_PATH,
 } from "@/lib/auth-redirects";
 import { ensureFreeTrialGranted } from "@/lib/profiles";
@@ -79,11 +79,9 @@ export async function GET(request: NextRequest) {
   }
 
   const isRecovery =
-    type === "recovery" ||
-    nextPath.startsWith(PASSWORD_RESET_NOTICE_PATH) ||
-    nextPath.startsWith(PASSWORD_UPDATE_PATH);
+    type === "recovery" || isPasswordRecoveryPath(nextPath);
 
-  // recovery 成功後はパスワード入力画面へ（案内ページではない）
+  // recovery 成功後はトップへ。クライアント側で再設定モーダルを開く
   const successPath = isRecovery
     ? PASSWORD_UPDATE_PATH
     : AUTH_CONFIRMED_PATH;

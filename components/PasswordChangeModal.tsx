@@ -3,7 +3,7 @@
 import { useAuth } from "@/components/AuthProvider";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { supabase } from "@/lib/supabase";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 export default function PasswordChangeModal() {
   const { passwordRecoveryOpen, closePasswordRecovery } = useAuth();
@@ -12,6 +12,16 @@ export default function PasswordChangeModal() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!passwordRecoveryOpen) {
+      setPassword("");
+      setPassword2("");
+      setError(null);
+      setDone(false);
+      setSubmitting(false);
+    }
+  }, [passwordRecoveryOpen]);
 
   if (!passwordRecoveryOpen) return null;
 
@@ -40,10 +50,7 @@ export default function PasswordChangeModal() {
       setDone(true);
       window.setTimeout(() => {
         closePasswordRecovery();
-        setDone(false);
-        setPassword("");
-        setPassword2("");
-      }, 1600);
+      }, 1800);
     } catch (err) {
       setError(toJapaneseAuthError(err));
     } finally {
@@ -66,18 +73,21 @@ export default function PasswordChangeModal() {
           新しいパスワードを設定
         </h2>
         <p className="mt-2 text-sm text-slate-400">
-          メール認証が完了しました。新しいパスワードを入力してください。
+          新しいパスワードを入力してください。更新後はそのままログイン状態でご利用いただけます。
         </p>
 
         {done ? (
-          <p className="mt-6 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200">
-            パスワードを更新しました。
+          <p
+            role="status"
+            className="mt-6 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200"
+          >
+            パスワードが正常に変更されました
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             <div>
               <label className="mb-2 block text-sm text-slate-200">
-                新しいパスワード
+                新しいパスワード（8文字以上）
               </label>
               <input
                 type="password"
@@ -87,11 +97,12 @@ export default function PasswordChangeModal() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-xl border border-slate-600/80 bg-slate-950/70 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                 autoComplete="new-password"
+                autoFocus
               />
             </div>
             <div>
               <label className="mb-2 block text-sm text-slate-200">
-                新しいパスワード（確認）
+                新しいパスワード（確認用）
               </label>
               <input
                 type="password"
@@ -121,7 +132,7 @@ export default function PasswordChangeModal() {
                 disabled={submitting}
                 className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
               >
-                {submitting ? "更新中…" : "更新する"}
+                {submitting ? "更新中…" : "パスワードを更新する"}
               </button>
             </div>
           </form>

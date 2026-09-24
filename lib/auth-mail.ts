@@ -93,5 +93,5 @@ export const RECOVERY_EMAIL = {
   subject: RECOVERY_SUBJECT,
   bodyText: "",
   bodyHtmlHintPath: "supabase/templates/reset-password.html",
-  redirectToPath: "/auth/callback?type=recovery&next=/auth/update-password",
+  redirectToPath: "/?action=reset-password",
 } as const;
