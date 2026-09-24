@@ -65,7 +65,11 @@ export default function SignupPage() {
       }
     } catch (err) {
       console.error("[signup] registration failed:", err);
-      setError(toJapaneseAuthError(err));
+      const msg = toJapaneseAuthError(err);
+      setError(msg);
+      if (/既に登録/.test(msg)) {
+        setInfo("すでにアカウントがある場合はログインをお試しください。");
+      }
     } finally {
       setSubmitting(false);
     }

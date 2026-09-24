@@ -369,7 +369,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           error: data.error,
           detail: data.detail,
         });
-        throw new Error(toJapaneseAuthError(data.error || data));
+        // API が返した日本語 error を優先。英語のみ translator 経由。
+        const raw =
+          typeof data.error === "string" ? data.error.trim() : "";
+        const jp =
+          raw && /[\u3040-\u30ff\u4e00-\u9fff]/.test(raw)
+            ? raw
+            : toJapaneseAuthError(raw || data.detail || data);
+        throw new Error(jp);
       }
 
       try {

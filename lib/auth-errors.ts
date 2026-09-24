@@ -47,6 +47,12 @@ const EXACT_MAP: Record<string, string> = {
     "メールの送信制限に達しました。1時間ほど時間を置いてから再度お試しください。",
   "Database error saving new user":
     "ユーザーの登録処理でエラーが発生しました。時間をおいて再度お試しください。",
+  "Invalid API key":
+    "サーバー側の認証設定が不正です（APIキー無効）。管理者に SUPABASE_SERVICE_ROLE_KEY / RESEND_API_KEY の確認を依頼してください。",
+  "Invalid API key.":
+    "サーバー側の認証設定が不正です（APIキー無効）。管理者に SUPABASE_SERVICE_ROLE_KEY / RESEND_API_KEY の確認を依頼してください。",
+  "API key is invalid":
+    "メール送信の設定が不正です（RESEND_API_KEY が無効）。管理者にお問い合わせください。",
 };
 
 const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
@@ -94,6 +100,11 @@ const PARTIAL_RULES: Array<{ test: RegExp; message: string }> = [
     test: /network|fetch failed|failed to fetch/i,
     message:
       "通信エラーが発生しました。ネットワーク接続を確認して再度お試しください。",
+  },
+  {
+    test: /invalid api key|api key is invalid|jwt|not authorized/i,
+    message:
+      "サーバー側の認証／メール設定が不正です。管理者に環境変数（SUPABASE_SERVICE_ROLE_KEY / RESEND_API_KEY）の確認を依頼してください。",
   },
   {
     test: /database error|service.?role/i,
