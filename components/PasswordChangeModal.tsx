@@ -3,9 +3,11 @@
 import { useAuth } from "@/components/AuthProvider";
 import { toJapaneseAuthError } from "@/lib/auth-errors";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 export default function PasswordChangeModal() {
+  const router = useRouter();
   const { passwordRecoveryOpen, closePasswordRecovery } = useAuth();
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -50,7 +52,8 @@ export default function PasswordChangeModal() {
       setDone(true);
       window.setTimeout(() => {
         closePasswordRecovery();
-      }, 1800);
+        router.replace("/");
+      }, 1400);
     } catch (err) {
       setError(toJapaneseAuthError(err));
     } finally {
@@ -81,7 +84,7 @@ export default function PasswordChangeModal() {
             role="status"
             className="mt-6 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200"
           >
-            パスワードが正常に変更されました
+            パスワードの変更が完了しました
           </p>
         ) : (
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">

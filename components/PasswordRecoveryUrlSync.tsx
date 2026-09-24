@@ -2,13 +2,12 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import { PASSWORD_RESET_ACTION } from "@/lib/auth-redirects";
-import { isAuthNoticePath } from "@/lib/auth-recovery-sync";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 
 /**
- * 旧リンク互換: トップに ?action=reset-password / #type=recovery で着地した場合。
- * 案内ページ上ではモーダルを開かない（元タブ完結）。
+ * メールリンクで開いた新タブで ?action=reset-password / type=recovery を検知し
+ * パスワード再設定モーダルを開く。
  */
 function PasswordRecoveryUrlSyncInner() {
   const { openPasswordRecovery } = useAuth();
@@ -18,7 +17,6 @@ function PasswordRecoveryUrlSyncInner() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isAuthNoticePath(pathname)) return;
 
     const action = searchParams.get("action");
     const typeQ = searchParams.get("type");
@@ -36,6 +34,7 @@ function PasswordRecoveryUrlSyncInner() {
 
     openPasswordRecovery();
 
+    // action クエリは掃除（ハッシュは Supabase 処理用に残す）
     if (action === PASSWORD_RESET_ACTION) {
       const params = new URLSearchParams(searchParams.toString());
       params.delete("action");
