@@ -19,6 +19,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailConfirmed = searchParams.get("message") === "email-confirmed";
+  const linkError = searchParams.get("error");
+  const linkDetail = searchParams.get("detail");
   const isDev = process.env.NODE_ENV === "development";
 
   const [email, setEmail] = useState("");
@@ -31,6 +33,14 @@ function LoginForm() {
       router.replace("/auth/confirmed?next=/login");
     }
   }, [emailConfirmed, router]);
+
+  useEffect(() => {
+    if (linkError) {
+      setError(
+        linkDetail ? `${linkError}（${linkDetail}）` : linkError
+      );
+    }
+  }, [linkError, linkDetail]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

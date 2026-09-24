@@ -14,8 +14,14 @@ function jsonError(
 }
 
 function siteOrigin(req: Request): string {
+  const host = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const proto =
+    req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  if (host && !/localhost|127\.0\.0\.1/i.test(host)) {
+    return `${proto}://${host}`;
+  }
   const env = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
-  if (env) return env;
+  if (env && !/localhost|127\.0\.0\.1/i.test(env)) return env;
   return new URL(req.url).origin;
 }
 
@@ -89,19 +95,22 @@ export async function POST(req: Request) {
   const props = linkData.properties as {
     hashed_token?: string;
     action_link?: string;
+    redirect_to?: string;
   };
   const tokenHash = props.hashed_token;
-  const resetUrl = tokenHash
-    ? `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent("/auth/password-reset-notice")}`
-    : props.action_link;
-
-  if (!resetUrl) {
+  if (!tokenHash) {
     return jsonError(
       "再設定メール用リンクの生成に失敗しました。",
-      "hashed_token / action_link が空です。",
+      "hashed_token が空です。",
       503
     );
   }
+
+  const resetUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=recovery&next=${encodeURIComponent("/auth/password-reset-notice")}`;
+  console.info("[api/auth/forgot-password] resetUrl host", {
+    host: new URL(resetUrl).host,
+    supabaseRedirectTo: props.redirect_to || null,
+  });
 
   const mail = buildRecoveryEmail(resetUrl);
   const sent = await sendResendEmail({

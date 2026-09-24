@@ -19,9 +19,19 @@ function jsonError(
 }
 
 function siteOrigin(req: Request): string {
+  const host = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const proto =
+    req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  if (host && !/localhost|127\.0\.0\.1/i.test(host)) {
+    return `${proto}://${host}`;
+  }
   const env = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
-  if (env) return env;
-  return new URL(req.url).origin;
+  if (env && !/localhost|127\.0\.0\.1/i.test(env)) return env;
+  try {
+    return new URL(req.url).origin;
+  } catch {
+    return env || "http://localhost:3000";
+  }
 }
 
 function describeUnknownError(err: unknown): {
@@ -160,28 +170,67 @@ export async function POST(req: Request) {
         user_metadata: metadata,
       });
 
-    if (createError || !created.user) {
+    let userId = created?.user?.id || "";
+
+    if (createError || !created?.user) {
       console.error("[API Register Error]:", createError);
-      console.error("[API Register Error] createUser fields:", {
-        message: createError?.message,
-        status: createError?.status,
-        code: (createError as { code?: string } | null)?.code,
-        name: createError?.name,
-      });
+      const code = (createError as { code?: string } | null)?.code;
+      const isDuplicate =
+        /already|exist|registered/i.test(createError?.message || "") ||
+        code === "email_exists" ||
+        code === "user_already_exists";
+
+      // 未確認の既存ユーザーには確認メールを再送
+      if (isDuplicate) {
+        const { data: linkData, error: linkError } =
+          await admin.auth.admin.generateLink({
+            type: "signup",
+            email,
+            password,
+            options: {
+              redirectTo: `${siteOrigin(req)}/auth/callback`,
+              data: metadata,
+            },
+          });
+
+        const tokenHash = linkData?.properties?.hashed_token as
+          | string
+          | undefined;
+        if (!linkError && tokenHash) {
+          const origin = siteOrigin(req);
+          const confirmUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=signup`;
+          const mail = buildConfirmSignupEmail(confirmUrl);
+          const sent = await sendResendEmail({
+            to: email,
+            subject: mail.subject,
+            html: mail.html,
+            text: mail.text,
+          });
+          if (!("error" in sent)) {
+            console.info("[api/auth/register] resent confirm to existing user");
+            return NextResponse.json({
+              success: true,
+              needsEmailConfirmation: true,
+              resent: true,
+              resendId: sent.id,
+            });
+          }
+          console.error("[API Register Error]: resent mail failed", sent);
+        } else {
+          console.error("[API Register Error]: resent generateLink", linkError);
+        }
+      }
 
       const jp = authErrorTranslator(
         createError || { message: "登録に失敗しました" }
       );
-      const status =
-        /already|exist|registered/i.test(createError?.message || "") ||
-        (createError as { code?: string } | null)?.code === "email_exists" ||
-        (createError as { code?: string } | null)?.code === "user_already_exists"
-          ? 409
-          : /invalid api key|jwt|not authorized|401|403/i.test(
-                createError?.message || ""
-              )
-            ? 503
-            : 400;
+      const status = isDuplicate
+        ? 409
+        : /invalid api key|jwt|not authorized|401|403/i.test(
+              createError?.message || ""
+            )
+          ? 503
+          : 400;
 
       return NextResponse.json(
         {
@@ -192,7 +241,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const userId = created.user.id;
+    userId = created.user.id;
 
     try {
       await upsertProfileForUser(
@@ -211,6 +260,8 @@ export async function POST(req: Request) {
     }
 
     const origin = siteOrigin(req);
+    console.info("[api/auth/register] confirm link origin", { origin });
+
     const { data: linkData, error: linkError } =
       await admin.auth.admin.generateLink({
         type: "signup",
@@ -234,19 +285,32 @@ export async function POST(req: Request) {
     const props = linkData.properties as {
       hashed_token?: string;
       action_link?: string;
+      redirect_to?: string;
+      verification_type?: string;
     };
-    const tokenHash = props.hashed_token;
-    const confirmUrl = tokenHash
-      ? `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=signup`
-      : props.action_link;
 
-    if (!confirmUrl) {
+    // Supabase ダッシュボードの Site URL が他アプリの場合があるため、
+    // action_link は使わず自前ドメインの token_hash コールバックを必ず使う。
+    const tokenHash = props.hashed_token;
+    if (!tokenHash) {
+      console.error("[API Register Error]: missing hashed_token", {
+        redirect_to: props.redirect_to,
+        verification_type: props.verification_type,
+        hasActionLink: !!props.action_link,
+      });
       return jsonError(
         "確認メール用リンクの生成に失敗しました。",
-        "hashed_token / action_link が空です。",
+        "hashed_token が空です。",
         503
       );
     }
+
+    const confirmUrl = `${origin}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}&type=signup`;
+    console.info("[api/auth/register] confirmUrl host", {
+      host: new URL(confirmUrl).host,
+      supabaseRedirectTo: props.redirect_to || null,
+      verification_type: props.verification_type || null,
+    });
 
     const mail = buildConfirmSignupEmail(confirmUrl);
     const sent = await sendResendEmail({

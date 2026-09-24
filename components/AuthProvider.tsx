@@ -272,30 +272,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    const client = supabase;
+    const maybeWelcomeAfterConfirm = (hasSession: boolean) => {
+      if (!hasSession) return;
+      try {
+        if (sessionStorage.getItem("awaiting_email_confirm") === "1") {
+          sessionStorage.removeItem("awaiting_email_confirm");
+          setWelcomeMessage(
+            "会員登録が完了しました。スマートお詫びコンシェルジュへようこそ。初回は有料プラン機能を1回無料でお試しいただけます。"
+          );
+          console.info("[auth] welcome after email confirm (tab sync)");
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      console.info("[auth] onAuthStateChange", {
+        event,
+        hasSession: !!nextSession?.user,
+      });
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecoveryOpen(true);
       }
-      if (event === "SIGNED_IN") {
-        try {
-          if (sessionStorage.getItem("awaiting_email_confirm") === "1") {
-            sessionStorage.removeItem("awaiting_email_confirm");
-            setWelcomeMessage(
-              "会員登録が完了しました。スマートお詫びコンシェルジュへようこそ。初回は有料プラン機能を1回無料でお試しいただけます。"
-            );
-          }
-        } catch {
-          // ignore
-        }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        maybeWelcomeAfterConfirm(!!nextSession?.user);
       }
       void syncFromSession(nextSession);
     });
 
-    const client = supabase;
     const onFocus = () => {
       void client.auth.getSession().then(({ data }) => {
+        console.info("[auth] focus/visibility sync", {
+          hasSession: !!data.session?.user,
+        });
+        maybeWelcomeAfterConfirm(!!data.session?.user);
         void syncFromSession(data.session);
       });
     };
